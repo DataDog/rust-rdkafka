@@ -6,12 +6,13 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fmt;
 use std::slice;
+use std::str::from_utf8;
 
 use rdkafka_sys as rdsys;
 use rdkafka_sys::types::*;
 
 use crate::error::{IsError, KafkaError, KafkaResult};
-use crate::util::{KafkaDrop, NativePtr};
+use crate::util::{ptr_to_slice, KafkaDrop, NativePtr};
 
 const PARTITION_UNASSIGNED: i32 = -1;
 
@@ -133,6 +134,12 @@ impl<'a> TopicPartitionListElem<'a> {
                 RDKafkaErrorCode::InvalidArgument,
             )),
         }
+    }
+
+    /// Returns the metadata.
+    pub fn metadata(&self) -> &str {
+        let slice: &[u8] = unsafe { ptr_to_slice(self.ptr.metadata, self.ptr.metadata_size) };
+        from_utf8(slice).expect("metadata is not UTF-8")
     }
 }
 

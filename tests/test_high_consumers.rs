@@ -205,6 +205,7 @@ async fn test_produce_consume_with_timestamp() {
     let tp = tpl.find_partition(&topic_name, 0).unwrap();
     assert_eq!(tp.topic(), topic_name);
     assert_eq!(tp.offset(), Offset::Offset(100));
+    assert_eq!(tp.metadata(), "");
     assert_eq!(tp.partition(), 0);
     assert_eq!(tp.error(), Ok(()));
 }
