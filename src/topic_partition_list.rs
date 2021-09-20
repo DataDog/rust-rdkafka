@@ -141,6 +141,17 @@ impl<'a> TopicPartitionListElem<'a> {
         let slice: &[u8] = unsafe { ptr_to_slice(self.ptr.metadata, self.ptr.metadata_size) };
         from_utf8(slice).expect("metadata is not UTF-8")
     }
+
+    /// Set the metadata.
+    pub fn set_metadata(&mut self, metadata: impl AsRef<str>) {
+        let metadata = metadata.as_ref();
+
+        unsafe {
+            self.ptr.metadata =
+                libc::strndup(metadata.as_ptr() as *const _, metadata.len()) as *mut _;
+            self.ptr.metadata_size = libc::strlen(self.ptr.metadata as *const _);
+        }
+    }
 }
 
 impl<'a> PartialEq for TopicPartitionListElem<'a> {
