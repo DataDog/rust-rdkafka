@@ -363,7 +363,8 @@ fn start_poll_thread(queue: Arc<NativeQueue>, should_stop: Arc<AtomicBool>) -> J
         .expect("Failed to start polling thread")
 }
 
-type NativeEvent = NativePtr<RDKafkaEvent>;
+/// NativeEvent is a NativePtr wrapper for the rdkafka event.
+pub type NativeEvent = NativePtr<RDKafkaEvent>;
 
 unsafe impl KafkaDrop for RDKafkaEvent {
     const TYPE: &'static str = "event";

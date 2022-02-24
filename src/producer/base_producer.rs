@@ -57,7 +57,9 @@ use rdkafka_sys::rd_kafka_vtype_t::*;
 use rdkafka_sys::types::*;
 
 use crate::client::Client;
-use crate::config::{ClientConfig, FromClientConfig, FromClientConfigAndContext};
+use crate::config::{
+    ClientConfig, DeliveryReportMode, FromClientConfig, FromClientConfigAndContext,
+};
 use crate::consumer::ConsumerGroupMetadata;
 use crate::error::{IsError, KafkaError, KafkaResult, RDKafkaError};
 use crate::message::{BorrowedMessage, OwnedHeaders, ToBytes};
@@ -222,7 +224,20 @@ where
     /// context.
     fn from_config_and_context(config: &ClientConfig, context: C) -> KafkaResult<BaseProducer<C>> {
         let native_config = config.create_native_config()?;
-        unsafe { rdsys::rd_kafka_conf_set_dr_msg_cb(native_config.ptr(), Some(delivery_cb::<C>)) };
+        if let DeliveryReportMode::CB = config.delivery_report_mode {
+            unsafe {
+                rdsys::rd_kafka_conf_set_dr_msg_cb(native_config.ptr(), Some(delivery_cb::<C>))
+            };
+        } else {
+            unsafe {
+                rdsys::rd_kafka_conf_set_events(
+                    native_config.ptr(),
+                    (rdsys::RD_KAFKA_EVENT_DR
+                        | rdsys::RD_KAFKA_EVENT_STATS
+                        | rdsys::RD_KAFKA_EVENT_ERROR) as i32,
+                )
+            };
+        }
         let client = Client::new(
             config,
             native_config,

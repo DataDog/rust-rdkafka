@@ -262,6 +262,7 @@
 #![allow(clippy::type_complexity)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+pub use rdkafka_sys::bindings;
 pub use rdkafka_sys::types;
 
 pub mod admin;

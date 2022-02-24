@@ -77,6 +77,15 @@ impl RDKafkaLogLevel {
     }
 }
 
+/// Delivery Report Mode supported by librdkafka
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeliveryReportMode {
+    /// Delivery reports through callback
+    CB,
+    /// Delivery reports through event API
+    EVENT,
+}
+
 //
 // ********** CLIENT CONFIG **********
 //
@@ -165,6 +174,8 @@ pub struct ClientConfig {
     /// The librdkafka logging level. Refer to [`RDKafkaLogLevel`] for the list
     /// of available levels.
     pub log_level: RDKafkaLogLevel,
+    /// The librdkafka delivery report mode.
+    pub delivery_report_mode: DeliveryReportMode,
 }
 
 impl Default for ClientConfig {
@@ -179,6 +190,7 @@ impl ClientConfig {
         ClientConfig {
             conf_map: HashMap::new(),
             log_level: log_level_from_global_config(),
+            delivery_report_mode: DeliveryReportMode::CB,
         }
     }
 
@@ -218,6 +230,12 @@ impl ClientConfig {
     /// on the global log level of the log crate.
     pub fn set_log_level(&mut self, log_level: RDKafkaLogLevel) -> &mut ClientConfig {
         self.log_level = log_level;
+        self
+    }
+
+    /// Sets the delivery report mode.
+    pub fn set_dr_mode(&mut self, dr_mode: DeliveryReportMode) -> &mut ClientConfig {
+        self.delivery_report_mode = dr_mode;
         self
     }
 

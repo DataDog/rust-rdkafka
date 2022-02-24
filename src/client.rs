@@ -372,6 +372,11 @@ impl<C: ClientContext> Client<C> {
     pub(crate) fn consumer_queue(&self) -> Option<NativeQueue> {
         unsafe { NativeQueue::from_ptr(rdsys::rd_kafka_queue_get_consumer(self.native_ptr())) }
     }
+
+    /// Returns a NativeQueue for the main librdkafka event queue from the current client.
+    pub fn main_queue(&self) -> NativeQueue {
+        unsafe { NativeQueue::from_ptr(rdsys::rd_kafka_queue_get_main(self.native_ptr())).unwrap() }
+    }
 }
 
 pub(crate) type NativeTopic = NativePtr<RDKafkaTopic>;
@@ -384,7 +389,9 @@ unsafe impl KafkaDrop for RDKafkaTopic {
 unsafe impl Send for NativeTopic {}
 unsafe impl Sync for NativeTopic {}
 
-pub(crate) type NativeQueue = NativePtr<RDKafkaQueue>;
+/// NativeQueue is a wrapper for the native rdkafka queue that correctly
+/// calls the librdkafka destroy object function
+pub type NativeQueue = NativePtr<RDKafkaQueue>;
 
 unsafe impl KafkaDrop for RDKafkaQueue {
     const TYPE: &'static str = "queue";
@@ -396,6 +403,7 @@ unsafe impl Sync for NativeQueue {}
 unsafe impl Send for NativeQueue {}
 
 impl NativeQueue {
+    /// Poll the librdkafka queue for events for max timeout
     pub fn poll<T: Into<Timeout>>(&self, t: T) -> *mut RDKafkaEvent {
         unsafe { rdsys::rd_kafka_queue_poll(self.ptr(), t.into().as_millis()) }
     }

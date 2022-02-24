@@ -85,7 +85,7 @@ pub fn current_time_millis() -> i64 {
 
 /// Converts a pointer to an array to an optional slice. If the pointer is null,
 /// returns `None`.
-pub(crate) unsafe fn ptr_to_opt_slice<'a, T>(ptr: *const c_void, size: usize) -> Option<&'a [T]> {
+pub unsafe fn ptr_to_opt_slice<'a, T>(ptr: *const c_void, size: usize) -> Option<&'a [T]> {
     if ptr.is_null() {
         None
     } else {
@@ -93,10 +93,9 @@ pub(crate) unsafe fn ptr_to_opt_slice<'a, T>(ptr: *const c_void, size: usize) ->
     }
 }
 
-pub(crate) unsafe fn ptr_to_opt_mut_slice<'a, T>(
-    ptr: *const c_void,
-    size: usize,
-) -> Option<&'a mut [T]> {
+/// Converts a pointer to an array to an optional mutable slice. If the pointer is null,
+/// returns `None`.
+pub unsafe fn ptr_to_opt_mut_slice<'a, T>(ptr: *const c_void, size: usize) -> Option<&'a mut [T]> {
     if ptr.is_null() {
         None
     } else {
@@ -106,7 +105,7 @@ pub(crate) unsafe fn ptr_to_opt_mut_slice<'a, T>(
 
 /// Converts a pointer to an array to a slice. If the pointer is null or the
 /// size is zero, returns a zero-length slice..
-pub(crate) unsafe fn ptr_to_slice<'a, T>(ptr: *const c_void, size: usize) -> &'a [T] {
+pub unsafe fn ptr_to_slice<'a, T>(ptr: *const c_void, size: usize) -> &'a [T] {
     if ptr.is_null() || size == 0 {
         &[][..]
     } else {
@@ -249,7 +248,8 @@ impl<T: WrappedCPointer> AsCArray<T> for Vec<T> {
     }
 }
 
-pub(crate) struct NativePtr<T>
+/// NativePtr that wraps a librdkafka object
+pub struct NativePtr<T>
 where
     T: KafkaDrop,
 {
@@ -267,8 +267,11 @@ where
     }
 }
 
-pub(crate) unsafe trait KafkaDrop {
+/// Trait for destroying librdkafka objects
+pub unsafe trait KafkaDrop {
+    /// rdkafka object type (name)
     const TYPE: &'static str;
+    /// rdkafka function for detroying the object
     const DROP: unsafe extern "C" fn(*mut Self);
 }
 
@@ -306,11 +309,13 @@ impl<T> NativePtr<T>
 where
     T: KafkaDrop,
 {
-    pub(crate) unsafe fn from_ptr(ptr: *mut T) -> Option<Self> {
+    /// from_ptr builds a new NonNull ptr for *mut T
+    pub unsafe fn from_ptr(ptr: *mut T) -> Option<Self> {
         NonNull::new(ptr).map(|ptr| Self { ptr })
     }
 
-    pub(crate) fn ptr(&self) -> *mut T {
+    /// ptr adquires the underlying *mut T
+    pub fn ptr(&self) -> *mut T {
         self.ptr.as_ptr()
     }
 }
