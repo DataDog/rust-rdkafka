@@ -372,6 +372,11 @@ impl<C: ClientContext> Client<C> {
     pub(crate) fn consumer_queue(&self) -> Option<NativeQueue> {
         unsafe { NativeQueue::from_ptr(rdsys::rd_kafka_queue_get_consumer(self.native_ptr())) }
     }
+
+    /// Returns a NativeQueue for the main librdkafka event queue from the current client.
+    pub(crate) fn main_queue(&self) -> NativeQueue {
+        unsafe { NativeQueue::from_ptr(rdsys::rd_kafka_queue_get_main(self.native_ptr())).unwrap() }
+    }
 }
 
 pub(crate) type NativeTopic = NativePtr<RDKafkaTopic>;

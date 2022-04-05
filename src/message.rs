@@ -144,7 +144,7 @@ pub trait Message {
 pub struct BorrowedHeaders;
 
 impl BorrowedHeaders {
-    unsafe fn from_native_ptr<T>(
+    pub(crate) unsafe fn from_native_ptr<T>(
         _owner: &T,
         headers_ptr: *mut rdsys::rd_kafka_headers_t,
     ) -> &BorrowedHeaders {

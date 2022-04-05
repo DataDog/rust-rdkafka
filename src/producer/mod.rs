@@ -168,6 +168,7 @@ use crate::topic_partition_list::TopicPartitionList;
 use crate::util::{IntoOpaque, Timeout};
 
 pub mod base_producer;
+pub mod event_producer;
 pub mod future_producer;
 
 #[doc(inline)]

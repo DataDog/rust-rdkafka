@@ -264,6 +264,7 @@
 
 pub use rdkafka_sys::types;
 
+pub mod ack;
 pub mod admin;
 pub mod client;
 pub mod config;
