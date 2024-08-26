@@ -569,7 +569,7 @@ impl OwnedHeaders {
             rdsys::rd_kafka_header_add(
                 self.ptr(),
                 header.key.as_ptr(),
-                header.key.to_bytes_with_nul().len() as isize,
+                header.key.to_bytes().len() as isize,
                 value_ptr,
                 value_len,
             )
