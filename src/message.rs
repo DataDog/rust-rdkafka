@@ -173,6 +173,15 @@ where
     }
 }
 
+/// A Kafka message header containing key as C string.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct CHeader<'a, V> {
+    /// The header's key.
+    pub key: &'a CStr,
+    /// The header's value.
+    pub value: Option<V>,
+}
+
 /// A generic representation of a Kafka message.
 ///
 /// Only read-only methods are provided by this trait, as the underlying storage
@@ -535,6 +544,17 @@ impl OwnedHeaders {
         V: ToBytes + ?Sized,
     {
         let name_cstring = CString::new(header.key).unwrap();
+        self.insert_cheader(CHeader {
+            key: &name_cstring,
+            value: header.value,
+        })
+    }
+
+    /// Inserts a new header.
+    pub fn insert_cheader<V>(self, header: CHeader<'_, &V>) -> OwnedHeaders
+    where
+        V: ToBytes + ?Sized,
+    {
         let (value_ptr, value_len) = match header.value {
             None => (ptr::null_mut(), 0),
             Some(value) => {
@@ -548,8 +568,8 @@ impl OwnedHeaders {
         let err = unsafe {
             rdsys::rd_kafka_header_add(
                 self.ptr(),
-                name_cstring.as_ptr(),
-                name_cstring.as_bytes().len() as isize,
+                header.key.as_ptr(),
+                header.key.to_bytes_with_nul().len() as isize,
                 value_ptr,
                 value_len,
             )
