@@ -15,9 +15,10 @@ use futures_channel::oneshot;
 use futures_util::FutureExt;
 
 use crate::client::{Client, ClientContext, DefaultClientContext, OAuthToken};
-use crate::config::{ClientConfig, FromClientConfig, FromClientConfigAndContext, RDKafkaLogLevel};
+use crate::config::{ClientConfig, FromClientConfig, FromClientConfigAndContext};
 use crate::consumer::ConsumerGroupMetadata;
 use crate::error::{KafkaError, KafkaResult, RDKafkaErrorCode};
+use crate::log::LogRecord;
 use crate::message::{Message, OwnedHeaders, OwnedMessage, Timestamp, ToBytes};
 use crate::producer::{
     BaseRecord, DeliveryResult, NoCustomPartitioner, Producer, ProducerContext, PurgeConfig,
@@ -145,8 +146,8 @@ pub type OwnedDeliveryResult = Result<(i32, i64), (KafkaError, OwnedMessage)>;
 impl<C: ClientContext + 'static> ClientContext for FutureProducerContext<C> {
     const ENABLE_REFRESH_OAUTH_TOKEN: bool = C::ENABLE_REFRESH_OAUTH_TOKEN;
 
-    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        self.wrapped_context.log(level, fac, log_message);
+    fn log(&self, record: LogRecord) {
+        self.wrapped_context.log(record);
     }
 
     fn stats(&self, statistics: Statistics) {

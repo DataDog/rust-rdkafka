@@ -61,8 +61,8 @@ pub enum RDKafkaLogLevel {
     Debug = 7,
 }
 
-impl RDKafkaLogLevel {
-    pub(crate) fn from_int(level: i32) -> RDKafkaLogLevel {
+impl From<i32> for RDKafkaLogLevel {
+    fn from(level: i32) -> RDKafkaLogLevel {
         match level {
             0 => RDKafkaLogLevel::Emerg,
             1 => RDKafkaLogLevel::Alert,

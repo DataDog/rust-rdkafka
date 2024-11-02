@@ -28,7 +28,7 @@ use crate::config::{ClientConfig, NativeClientConfig, RDKafkaLogLevel};
 use crate::consumer::RebalanceProtocol;
 use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::groups::GroupList;
-use crate::log::{debug, error, info, trace, warn};
+use crate::log::{debug, error, info, trace, warn, LogRecord};
 use crate::metadata::Metadata;
 use crate::mocking::MockCluster;
 use crate::statistics::Statistics;
@@ -65,25 +65,22 @@ pub trait ClientContext: Send + Sync {
     /// details about the log level mapping.
     ///
     /// [`log`]: https://docs.rs/log
-    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        match level {
+    fn log(&self, record: LogRecord) {
+        match record.level() {
             RDKafkaLogLevel::Emerg
             | RDKafkaLogLevel::Alert
             | RDKafkaLogLevel::Critical
             | RDKafkaLogLevel::Error => {
-                error!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                error!(target: "librdkafka", "librdkafka: {} {}", record.facility(), record.log_message())
             }
             RDKafkaLogLevel::Warning => {
-                warn!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                warn!(target: "librdkafka", "librdkafka: {} {}", record.facility(), record.log_message())
             }
-            RDKafkaLogLevel::Notice => {
-                info!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
-            }
-            RDKafkaLogLevel::Info => {
-                info!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+            RDKafkaLogLevel::Notice | RDKafkaLogLevel::Info => {
+                info!(target: "librdkafka", "librdkafka: {} {}", record.facility(), record.log_message())
             }
             RDKafkaLogLevel::Debug => {
-                debug!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                debug!(target: "librdkafka", "librdkafka: {} {}", record.facility(), record.log_message())
             }
         }
     }
@@ -346,11 +343,11 @@ impl<C: ClientContext> Client<C> {
         if result == 0 {
             let fac = unsafe { CStr::from_ptr(fac).to_string_lossy() };
             let log_message = unsafe { CStr::from_ptr(str_).to_string_lossy() };
-            self.context().log(
-                RDKafkaLogLevel::from_int(level),
-                fac.trim(),
-                log_message.trim(),
-            );
+            self.context().log(LogRecord::new(
+                level.into(),
+                fac.trim().into(),
+                log_message.trim().into(),
+            ));
         }
     }
 

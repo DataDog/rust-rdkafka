@@ -291,6 +291,7 @@ pub mod util;
 // Re-exports.
 pub use crate::client::ClientContext;
 pub use crate::config::ClientConfig;
+pub use crate::log::LogRecord;
 pub use crate::message::{Message, Timestamp};
 pub use crate::statistics::Statistics;
 pub use crate::topic_partition_list::{Offset, TopicPartitionList};
