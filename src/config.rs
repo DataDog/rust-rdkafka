@@ -22,11 +22,12 @@
 //!
 //! [librdkafka-config]: https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
 
-use std::collections::HashMap;
-use std::ffi::CString;
+use std::collections::{HashMap, HashSet};
+use std::ffi::{CStr, CString};
 use std::iter::FromIterator;
 use std::os::raw::c_char;
 use std::ptr;
+use std::sync::LazyLock;
 
 use rdkafka_sys as rdsys;
 use rdkafka_sys::types::*;
@@ -35,6 +36,19 @@ use crate::client::ClientContext;
 use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::log::{log_enabled, DEBUG, INFO, WARN};
 use crate::util::{ErrBuf, KafkaDrop, NativePtr};
+
+/// Set of all debug contexts
+pub static DEBUG_CONTEXTS: LazyLock<HashSet<String>> = LazyLock::new(|| {
+    let contexts_csv = unsafe { CStr::from_ptr(rdsys::rd_kafka_get_debug_contexts()) };
+    contexts_csv
+        .to_string_lossy()
+        .split(",")
+        .map(|cname| cname.to_owned())
+        .collect()
+});
+/// Byte length of CSV string of all debug contexts
+pub static DEBUG_CONTEXTS_BYTE_LENGTH: LazyLock<usize> =
+    LazyLock::new(|| unsafe { CStr::from_ptr(rdsys::rd_kafka_get_debug_contexts()).count_bytes() });
 
 /// The log levels supported by librdkafka.
 #[derive(Copy, Clone, Debug)]

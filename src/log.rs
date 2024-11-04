@@ -5,6 +5,7 @@
 //! [`tracing`]: https://docs.rs/tracing
 //!
 use crate::config::RDKafkaLogLevel;
+use std::str::Split;
 
 #[cfg(not(feature = "tracing"))]
 pub use log::Level::{Debug as DEBUG, Info as INFO, Warn as WARN};
@@ -26,14 +27,17 @@ pub struct LogRecord {
     level: RDKafkaLogLevel,
     fac: String,
     log_message: String,
+    contexts: String,
 }
 
 impl LogRecord {
-    pub fn new(level: RDKafkaLogLevel, fac: String, log_message: String) -> Self {
+    /// Build a new LogRecord
+    pub fn new(level: RDKafkaLogLevel, fac: String, log_message: String, contexts: String) -> Self {
         LogRecord {
             level,
             fac,
             log_message,
+            contexts,
         }
     }
 
@@ -50,5 +54,15 @@ impl LogRecord {
     /// The message for this record
     pub fn log_message(&self) -> &str {
         &self.log_message
+    }
+
+    /// The set of debug contexts for this record
+    pub fn contexts(&self) -> &str {
+        &self.contexts
+    }
+
+    /// An iterator over the CSV context items
+    pub fn split_contexts(&self) -> Split<'_, &str> {
+        self.contexts.split(",")
     }
 }
