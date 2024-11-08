@@ -348,7 +348,7 @@ impl<C: ClientContext> Client<C> {
             let result = unsafe {
                 rdsys::rd_kafka_event_debug_contexts(
                     event,
-                    raw_contents.as_mut_ptr() as *mut i8,
+                    raw_contents.as_mut_ptr() as *mut c_char,
                     *DEBUG_CONTEXTS_BYTE_LENGTH,
                 )
             };
