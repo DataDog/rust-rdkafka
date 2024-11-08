@@ -5,7 +5,6 @@
 //! [`tracing`]: https://docs.rs/tracing
 //!
 use crate::config::RDKafkaLogLevel;
-use std::str::Split;
 
 #[cfg(not(feature = "tracing"))]
 pub use log::Level::{Debug as DEBUG, Info as INFO, Warn as WARN};
@@ -62,7 +61,7 @@ impl LogRecord {
     }
 
     /// An iterator over the CSV context items
-    pub fn split_contexts(&self) -> Split<'_, &str> {
+    pub fn split_contexts(&self) -> impl Iterator<Item = &str> {
         self.contexts.split(",")
     }
 }
