@@ -26,17 +26,22 @@ pub struct LogRecord {
     level: RDKafkaLogLevel,
     fac: String,
     log_message: String,
-    contexts: String,
+    raw_contexts: String,
 }
 
 impl LogRecord {
     /// Build a new LogRecord
-    pub fn new(level: RDKafkaLogLevel, fac: String, log_message: String, contexts: String) -> Self {
+    pub fn new(
+        level: RDKafkaLogLevel,
+        fac: String,
+        log_message: String,
+        raw_contexts: String,
+    ) -> Self {
         LogRecord {
             level,
             fac,
             log_message,
-            contexts,
+            raw_contexts,
         }
     }
 
@@ -55,13 +60,13 @@ impl LogRecord {
         &self.log_message
     }
 
-    /// The set of debug contexts for this record
-    pub fn contexts(&self) -> &str {
-        &self.contexts
+    /// The CSV string of debug contexts for this record
+    pub fn raw_contexts(&self) -> &str {
+        &self.raw_contexts
     }
 
     /// An iterator over the CSV context items
-    pub fn split_contexts(&self) -> impl Iterator<Item = &str> {
-        self.contexts.split(",")
+    pub fn contexts(&self) -> impl Iterator<Item = &str> {
+        self.raw_contexts.split(",")
     }
 }
