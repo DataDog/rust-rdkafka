@@ -10,7 +10,6 @@
 //!
 //! [`consumer`]: crate::consumer
 //! [`producer`]: crate::producer
-
 use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::mem::ManuallyDrop;
@@ -24,11 +23,12 @@ use rdkafka_sys as rdsys;
 use rdkafka_sys::types::*;
 
 use crate::admin::NativeEvent;
+use crate::config::DEBUG_CONTEXTS_BYTE_LENGTH;
 use crate::config::{ClientConfig, NativeClientConfig, RDKafkaLogLevel};
 use crate::consumer::RebalanceProtocol;
 use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::groups::GroupList;
-use crate::log::{debug, error, info, trace, warn};
+use crate::log::{debug, error, info, trace, warn, LogRecord};
 use crate::metadata::Metadata;
 use crate::mocking::MockCluster;
 use crate::statistics::Statistics;
@@ -65,25 +65,22 @@ pub trait ClientContext: Send + Sync {
     /// details about the log level mapping.
     ///
     /// [`log`]: https://docs.rs/log
-    fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        match level {
+    fn log(&self, record: LogRecord) {
+        match record.level() {
             RDKafkaLogLevel::Emerg
             | RDKafkaLogLevel::Alert
             | RDKafkaLogLevel::Critical
             | RDKafkaLogLevel::Error => {
-                error!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                error!(target: "librdkafka", "librdkafka: {} {}", record.facility(), record.log_message())
             }
             RDKafkaLogLevel::Warning => {
-                warn!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                warn!(target: "librdkafka", "librdkafka: {} {}", record.facility(), record.log_message())
             }
-            RDKafkaLogLevel::Notice => {
-                info!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
-            }
-            RDKafkaLogLevel::Info => {
-                info!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+            RDKafkaLogLevel::Notice | RDKafkaLogLevel::Info => {
+                info!(target: "librdkafka", "librdkafka: {} {}", record.facility(), record.log_message())
             }
             RDKafkaLogLevel::Debug => {
-                debug!(target: "librdkafka", "librdkafka: {} {}", fac, log_message)
+                debug!(target: "librdkafka", "librdkafka: {} {}", record.facility(), record.log_message())
             }
         }
     }
@@ -346,11 +343,32 @@ impl<C: ClientContext> Client<C> {
         if result == 0 {
             let fac = unsafe { CStr::from_ptr(fac).to_string_lossy() };
             let log_message = unsafe { CStr::from_ptr(str_).to_string_lossy() };
-            self.context().log(
-                RDKafkaLogLevel::from_int(level),
-                fac.trim(),
-                log_message.trim(),
-            );
+            // Allocate a string big enough to hold all contexts if necessary
+            let mut raw_contents = vec![0u8; *DEBUG_CONTEXTS_BYTE_LENGTH + 1];
+            let result = unsafe {
+                rdsys::rd_kafka_event_debug_contexts(
+                    event,
+                    raw_contents.as_mut_ptr() as *mut c_char,
+                    *DEBUG_CONTEXTS_BYTE_LENGTH,
+                )
+            };
+            let contexts = if result == 0 {
+                let mut csv = unsafe { CString::from_vec_with_nul_unchecked(raw_contents) }
+                    .to_string_lossy()
+                    .into_owned();
+                if let Some(idx) = csv.find("\0") {
+                    csv.truncate(idx);
+                }
+                csv
+            } else {
+                "".to_string()
+            };
+            self.context().log(LogRecord::new(
+                level.into(),
+                fac.trim().into(),
+                log_message.trim().into(),
+                contexts,
+            ));
         }
     }
 

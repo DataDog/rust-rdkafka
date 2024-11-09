@@ -3,6 +3,8 @@
 //!
 //! [`log`]: https://docs.rs/log
 //! [`tracing`]: https://docs.rs/tracing
+//!
+use crate::config::RDKafkaLogLevel;
 
 #[cfg(not(feature = "tracing"))]
 pub use log::Level::{Debug as DEBUG, Info as INFO, Warn as WARN};
@@ -17,3 +19,54 @@ pub const DEBUG: tracing::Level = tracing::Level::DEBUG;
 pub const INFO: tracing::Level = tracing::Level::INFO;
 #[cfg(feature = "tracing")]
 pub const WARN: tracing::Level = tracing::Level::WARN;
+
+///A record containing all of the logging metadata from librdkafka
+#[derive(Debug, Clone)]
+pub struct LogRecord {
+    level: RDKafkaLogLevel,
+    fac: String,
+    log_message: String,
+    raw_contexts: String,
+}
+
+impl LogRecord {
+    /// Build a new LogRecord
+    pub fn new(
+        level: RDKafkaLogLevel,
+        fac: String,
+        log_message: String,
+        raw_contexts: String,
+    ) -> Self {
+        LogRecord {
+            level,
+            fac,
+            log_message,
+            raw_contexts,
+        }
+    }
+
+    /// The librdkafka log level for this record
+    pub fn level(&self) -> RDKafkaLogLevel {
+        self.level
+    }
+
+    /// The librdkafka facility for this record
+    pub fn facility(&self) -> &str {
+        &self.fac
+    }
+
+    /// The message for this record
+    pub fn log_message(&self) -> &str {
+        &self.log_message
+    }
+
+    /// The CSV string of debug contexts for this record
+    pub fn raw_contexts(&self) -> &str {
+        &self.raw_contexts
+    }
+
+    /// An iterator over the CSV context items
+    pub fn contexts(&self) -> impl Iterator<Item = &str> {
+        self.raw_contexts.split(",")
+    }
+}

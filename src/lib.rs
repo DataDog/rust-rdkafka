@@ -176,7 +176,7 @@
 //!
 //! ### Minimum supported Rust version (MSRV)
 //!
-//! The current minimum supported Rust version (MSRV) is 1.70.0. Note that
+//! The current minimum supported Rust version (MSRV) is 1.80.0. Note that
 //! bumping the MSRV is not considered a breaking change. Any release of
 //! rust-rdkafka may bump the MSRV.
 //!
@@ -291,6 +291,7 @@ pub mod util;
 // Re-exports.
 pub use crate::client::ClientContext;
 pub use crate::config::ClientConfig;
+pub use crate::log::LogRecord;
 pub use crate::message::{Message, Timestamp};
 pub use crate::statistics::Statistics;
 pub use crate::topic_partition_list::{Offset, TopicPartitionList};

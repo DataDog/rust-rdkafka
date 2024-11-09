@@ -4,9 +4,11 @@ See also the [rdkafka-sys changelog](rdkafka-sys/changelog.md).
 
 ## Unreleased
 
-* Update MSRV to 1.70
+* Update MSRV to 1.80
 * Remove testign for old Kafka versions (before 3.0). Add tests for 3.7.
 * Fix test dependency on docker compose.
+* Backwards incompatible: `ClientContext::log` now accepts a single `LogRecord`
+* Add `LogRecord::context` to contain the logging context for the given message
 
 ## 0.36.2 (2024-01-16)
 
