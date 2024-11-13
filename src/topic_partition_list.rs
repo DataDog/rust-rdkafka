@@ -154,6 +154,11 @@ impl<'a> TopicPartitionListElem<'a> {
         self.ptr.metadata = buf;
         self.ptr.metadata_size = metadata.len();
     }
+
+    /// Returns leader epoch associated with the entry.
+    pub fn leader_epoch(&self) -> i32 {
+        rdsys::rd_kafka_topic_partition_get_leader_epoch(self.ptr)
+    }
 }
 
 impl<'a> PartialEq for TopicPartitionListElem<'a> {
