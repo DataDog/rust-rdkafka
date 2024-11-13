@@ -157,7 +157,7 @@ impl<'a> TopicPartitionListElem<'a> {
 
     /// Returns leader epoch associated with the entry.
     pub fn leader_epoch(&self) -> i32 {
-        rdsys::rd_kafka_topic_partition_get_leader_epoch(self.ptr)
+        unsafe { rdsys::rd_kafka_topic_partition_get_leader_epoch(self.ptr) }
     }
 }
 
