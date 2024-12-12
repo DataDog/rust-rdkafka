@@ -9,6 +9,9 @@ See also the [rdkafka-sys changelog](rdkafka-sys/changelog.md).
 * Fix test dependency on docker compose.
 * Backwards incompatible: `ClientContext::log` now accepts a single `LogRecord`
 * Add `LogRecord::context` to contain the logging context for the given message
+* Address wakeup races introduced by pivoting to the event API.
+* Update `BaseProducer::poll` to not return early, and instead continue
+  looping until the passed timeout is reached.
 
 ## 0.36.2 (2024-01-16)
 
