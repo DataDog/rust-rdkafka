@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 5.0.0+2.8.0 (2025-03-25)
+
+* Upgrade to librdkafka v2.8.0.
+
 ## v4.9.0+2.5.0 (2024-08-22)
 
 * Upgrade to librdkafka v2.5.0.
