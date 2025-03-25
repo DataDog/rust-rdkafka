@@ -169,7 +169,8 @@ impl NativeClientConfig {
 }
 
 /// Client configuration.
-#[derive(Clone, Debug)]
+/// Do not derive debug as this config can hold sensitive data
+#[derive(Clone)]
 pub struct ClientConfig {
     conf_map: HashMap<String, String>,
     /// The librdkafka logging level. Refer to [`RDKafkaLogLevel`] for the list
