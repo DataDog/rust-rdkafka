@@ -15,11 +15,10 @@ cargo install bindgen-cli
 Then:
 
   * Add a changelog entry to rdkafka-sys/changelog.md.
-  * Update src/lib.rs with the new version.
 
 ## Releasing
 
-* Checkout into master and pull the latest changes.
+* Checkout into datadog/main and pull the latest changes.
 * Ensure the changelog is up to date (i.e not Unreleased changes).
 * Run `cd rdkafka-sys && ../generate_readme.py > README.md`.
 * Bump the version in Cargo.toml and commit locally.
