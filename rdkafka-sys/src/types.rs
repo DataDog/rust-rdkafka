@@ -252,6 +252,8 @@ pub enum RDKafkaErrorCode {
     /// A different record in the batch was invalid and this message failed
     /// persisting.
     InvalidDifferentRecord = -138,
+    /// Broker is going away but client isn't terminating
+    DestroyBroker = -137,
     #[doc(hidden)]
     End = -100,
     /// Unknown broker error.
@@ -476,8 +478,10 @@ pub enum RDKafkaErrorCode {
     /// Client sent a push telemetry request larger than the maximum size
     /// the broker will accept.
     TelemetryTooLarge = 118,
+    /// Client metadata is stale, client should rebootstrap to obtain new metadata
+    RebootstrapRequired = 129,
     #[doc(hidden)]
-    EndAll,
+    EndAll = 130,
 }
 
 impl From<RDKafkaRespErr> for RDKafkaErrorCode {
