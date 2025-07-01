@@ -182,5 +182,7 @@ pub fn rd_kafka_resp_err_t_to_rdkafka_error(err: RDKafkaRespErr) -> RDKafkaError
         RD_KAFKA_RESP_ERR_STALE_MEMBER_EPOCH => StaleMemberEpoch,
         RD_KAFKA_RESP_ERR_UNKNOWN_SUBSCRIPTION_ID => UnknownSubscriptionId,
         RD_KAFKA_RESP_ERR_TELEMETRY_TOO_LARGE => TelemetryTooLarge,
+        RD_KAFKA_RESP_ERR_REBOOTSTRAP_REQUIRED => RebootstrapRequired,
+        RD_KAFKA_RESP_ERR__DESTROY_BROKER => DestroyBroker,
     }
 }

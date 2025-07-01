@@ -3,7 +3,7 @@
 use libc::{c_char, c_int, c_void, sockaddr, FILE};
 use num_enum::TryFromPrimitive;
 
-pub const RD_KAFKA_VERSION: i32 = 34078975;
+pub const RD_KAFKA_VERSION: i32 = 34210303;
 pub const RD_KAFKA_DEBUG_CONTEXTS : & [u8 ; 138] = b"all,generic,broker,topic,metadata,feature,queue,msg,protocol,cgrp,security,fetch,interceptor,plugin,consumer,admin,eos,mock,assignor,conf\0" ;
 pub const RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE: i32 = 8;
 pub const RD_KAFKA_OFFSET_BEGINNING: i32 = -2;
@@ -222,6 +222,7 @@ pub enum rd_kafka_resp_err_t {
     RD_KAFKA_RESP_ERR__AUTO_OFFSET_RESET = -140,
     RD_KAFKA_RESP_ERR__LOG_TRUNCATION = -139,
     RD_KAFKA_RESP_ERR__INVALID_DIFFERENT_RECORD = -138,
+    RD_KAFKA_RESP_ERR__DESTROY_BROKER = -137,
     RD_KAFKA_RESP_ERR__END = -100,
     RD_KAFKA_RESP_ERR_UNKNOWN = -1,
     RD_KAFKA_RESP_ERR_NO_ERROR = 0,
@@ -329,7 +330,8 @@ pub enum rd_kafka_resp_err_t {
     RD_KAFKA_RESP_ERR_STALE_MEMBER_EPOCH = 113,
     RD_KAFKA_RESP_ERR_UNKNOWN_SUBSCRIPTION_ID = 117,
     RD_KAFKA_RESP_ERR_TELEMETRY_TOO_LARGE = 118,
-    RD_KAFKA_RESP_ERR_END_ALL = 119,
+    RD_KAFKA_RESP_ERR_REBOOTSTRAP_REQUIRED = 129,
+    RD_KAFKA_RESP_ERR_END_ALL = 130,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -1744,6 +1746,9 @@ unsafe extern "C" {
     pub fn rd_kafka_brokers_add(rk: *mut rd_kafka_t, brokerlist: *const c_char) -> c_int;
 }
 unsafe extern "C" {
+    pub fn rd_kafka_brokers_learned_ids(rk: *mut rd_kafka_t, cntp: *mut usize) -> *mut i32;
+}
+unsafe extern "C" {
     pub fn rd_kafka_set_logger(
         rk: *mut rd_kafka_t,
         func: Option<
@@ -2563,7 +2568,8 @@ pub enum rd_kafka_ConfigSource_t {
     RD_KAFKA_CONFIG_SOURCE_DYNAMIC_DEFAULT_BROKER_CONFIG = 3,
     RD_KAFKA_CONFIG_SOURCE_STATIC_BROKER_CONFIG = 4,
     RD_KAFKA_CONFIG_SOURCE_DEFAULT_CONFIG = 5,
-    RD_KAFKA_CONFIG_SOURCE__CNT = 6,
+    RD_KAFKA_CONFIG_SOURCE_GROUP_CONFIG = 8,
+    RD_KAFKA_CONFIG_SOURCE__CNT = 9,
 }
 unsafe extern "C" {
     pub fn rd_kafka_ConfigSource_name(confsource: rd_kafka_ConfigSource_t) -> *const c_char;
@@ -3025,6 +3031,11 @@ unsafe extern "C" {
     ) -> *const rd_kafka_Node_t;
 }
 unsafe extern "C" {
+    pub fn rd_kafka_ConsumerGroupDescription_type(
+        grpdesc: *const rd_kafka_ConsumerGroupDescription_t,
+    ) -> rd_kafka_consumer_group_type_t;
+}
+unsafe extern "C" {
     pub fn rd_kafka_ConsumerGroupDescription_member_count(
         grpdesc: *const rd_kafka_ConsumerGroupDescription_t,
     ) -> usize;
@@ -3064,6 +3075,11 @@ unsafe extern "C" {
     pub fn rd_kafka_MemberAssignment_partitions(
         assignment: *const rd_kafka_MemberAssignment_t,
     ) -> *const rd_kafka_topic_partition_list_t;
+}
+unsafe extern "C" {
+    pub fn rd_kafka_MemberDescription_target_assignment(
+        member: *const rd_kafka_MemberDescription_t,
+    ) -> *const rd_kafka_MemberAssignment_t;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3746,6 +3762,14 @@ unsafe extern "C" {
     ) -> rd_kafka_resp_err_t;
 }
 unsafe extern "C" {
+    pub fn rd_kafka_mock_broker_set_host_port(
+        mcluster: *mut rd_kafka_mock_cluster_t,
+        broker_id: i32,
+        host: *const c_char,
+        port: c_int,
+    );
+}
+unsafe extern "C" {
     pub fn rd_kafka_mock_broker_set_up(
         mcluster: *mut rd_kafka_mock_cluster_t,
         broker_id: i32,
@@ -3763,6 +3787,18 @@ unsafe extern "C" {
         mcluster: *mut rd_kafka_mock_cluster_t,
         broker_id: i32,
         rack: *const c_char,
+    ) -> rd_kafka_resp_err_t;
+}
+unsafe extern "C" {
+    pub fn rd_kafka_mock_broker_decommission(
+        cluster: *mut rd_kafka_mock_cluster_t,
+        broker_id: i32,
+    ) -> rd_kafka_resp_err_t;
+}
+unsafe extern "C" {
+    pub fn rd_kafka_mock_broker_add(
+        mcluster: *mut rd_kafka_mock_cluster_t,
+        broker_id: i32,
     ) -> rd_kafka_resp_err_t;
 }
 unsafe extern "C" {

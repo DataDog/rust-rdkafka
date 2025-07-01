@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 5.1.0+2.10.1 (2025-07-01)
+
+* Upgrade to librdkafka v2.10.1
 
 ## 5.0.0+2.8.0 (2025-03-25)
 
