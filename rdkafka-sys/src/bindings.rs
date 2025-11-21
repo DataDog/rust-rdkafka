@@ -156,6 +156,18 @@ pub struct rd_kafka_topic_partition_result_s {
     _unused: [u8; 0],
 }
 pub type rd_kafka_topic_partition_result_t = rd_kafka_topic_partition_result_s;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rd_kafka_produce_ctx_s {
+    _unused: [u8; 0],
+}
+pub type rd_kafka_produce_ctx_t = rd_kafka_produce_ctx_s;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct rd_kafka_produce_calculator_s {
+    _unused: [u8; 0],
+}
+pub type rd_kafka_produce_calculator_t = rd_kafka_produce_calculator_s;
 #[repr(i32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, TryFromPrimitive)]
 pub enum rd_kafka_resp_err_t {
