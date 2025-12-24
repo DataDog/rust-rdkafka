@@ -162,6 +162,16 @@ pub struct Broker {
     pub throttle: Option<Window>,
     /// The partitions that are handled by this broker handle.
     pub toppars: HashMap<String, TopicPartition>,
+
+    // The following produce statistics are available as of librdkafka XXXX
+    /// Rolling window statistics for partitions per ProduceRequest
+    pub produce_partitions: Option<Window>,
+    /// Rolling window statistics for messages per ProduceRequest
+    pub produce_messages: Option<Window>,
+    /// Rolling window statistics for bytes per produce_request
+    pub produce_reqsize: Option<Window>,
+    /// Rolling window statistics for ProduceRequest fill ratio (permille)
+    pub produce_fill: Option<Window>,
 }
 
 /// Rolling window statistics.
@@ -387,6 +397,31 @@ mod tests {
             }
         );
 
+        // Verify new produce statistics fields
+        let produce_partitions = broker.produce_partitions.as_ref().unwrap();
+        assert_eq!(produce_partitions.min, 1);
+        assert_eq!(produce_partitions.max, 3);
+        assert_eq!(produce_partitions.avg, 2);
+        assert_eq!(produce_partitions.cnt, 4739);
+
+        let produce_messages = broker.produce_messages.as_ref().unwrap();
+        assert_eq!(produce_messages.min, 1);
+        assert_eq!(produce_messages.max, 18483);
+        assert_eq!(produce_messages.avg, 912);
+        assert_eq!(produce_messages.cnt, 4739);
+
+        let produce_reqsize = broker.produce_reqsize.as_ref().unwrap();
+        assert_eq!(produce_reqsize.min, 99);
+        assert_eq!(produce_reqsize.max, 720828);
+        assert_eq!(produce_reqsize.avg, 35613);
+        assert_eq!(produce_reqsize.cnt, 4739);
+
+        let produce_fill = broker.produce_fill.as_ref().unwrap();
+        assert_eq!(produce_fill.min, 0);
+        assert_eq!(produce_fill.max, 720);
+        assert_eq!(produce_fill.avg, 35);
+        assert_eq!(produce_fill.cnt, 4739);
+
         assert_eq!(stats.topics.len(), 1);
     }
 
@@ -526,6 +561,70 @@ mod tests {
                 "topic": "test",
                 "partition": 2
               }
+            },
+            "produce_partitions": {
+              "min": 1,
+              "max": 3,
+              "avg": 2,
+              "sum": 9478,
+              "stddev": 1,
+              "p50": 2,
+              "p75": 3,
+              "p90": 3,
+              "p95": 3,
+              "p99": 3,
+              "p99_99": 3,
+              "outofrange": 0,
+              "hdrsize": 8304,
+              "cnt": 4739
+            },
+            "produce_messages": {
+              "min": 1,
+              "max": 18483,
+              "avg": 912,
+              "sum": 4322068,
+              "stddev": 1008,
+              "p50": 801,
+              "p75": 891,
+              "p90": 987,
+              "p95": 1059,
+              "p99": 5541,
+              "p99_99": 18495,
+              "outofrange": 0,
+              "hdrsize": 11376,
+              "cnt": 4739
+            },
+            "produce_reqsize": {
+              "min": 99,
+              "max": 720828,
+              "avg": 35613,
+              "sum": 168781107,
+              "stddev": 39411,
+              "p50": 31293,
+              "p75": 34749,
+              "p90": 38397,
+              "p95": 41469,
+              "p99": 216573,
+              "p99_99": 721919,
+              "outofrange": 0,
+              "hdrsize": 14448,
+              "cnt": 4739
+            },
+            "produce_fill": {
+              "min": 0,
+              "max": 720,
+              "avg": 35,
+              "sum": 165865,
+              "stddev": 39,
+              "p50": 31,
+              "p75": 34,
+              "p90": 38,
+              "p95": 41,
+              "p99": 216,
+              "p99_99": 721,
+              "outofrange": 0,
+              "hdrsize": 8304,
+              "cnt": 4739
             }
           }
         },
