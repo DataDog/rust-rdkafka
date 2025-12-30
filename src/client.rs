@@ -28,7 +28,7 @@ use crate::config::{ClientConfig, NativeClientConfig, RDKafkaLogLevel};
 use crate::consumer::RebalanceProtocol;
 use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::groups::GroupList;
-use crate::log::{debug, error, info, trace, warn, LogRecord};
+use crate::log::{LogRecord, debug, error, info, trace, warn};
 use crate::metadata::Metadata;
 use crate::mocking::MockCluster;
 use crate::statistics::Statistics;
@@ -353,15 +353,11 @@ impl<C: ClientContext> Client<C> {
                 )
             };
             let contexts = if result == 0 {
-                let mut csv = unsafe { CString::from_vec_with_nul_unchecked(raw_contents) }
-                    .to_string_lossy()
-                    .into_owned();
-                if let Some(idx) = csv.find("\0") {
-                    csv.truncate(idx);
-                }
-                csv
+                let cstr = CStr::from_bytes_until_nul(&raw_contents)
+                    .expect("raw_contents always contains a NULL byte");
+                cstr.to_string_lossy().into_owned()
             } else {
-                "".to_string()
+                String::new()
             };
             self.context().log(LogRecord::new(
                 level.into(),
@@ -434,7 +430,10 @@ impl<C: ClientContext> Client<C> {
                 let message = match CString::new(e.to_string()) {
                     Ok(message) => message,
                     Err(e) => {
-                        error!("error message generated while refreshing OAuth token has embedded null character: {}", e);
+                        error!(
+                            "error message generated while refreshing OAuth token has embedded null character: {}",
+                            e
+                        );
                         CString::new(
                             "error while refreshing OAuth token has embedded null character",
                         )
