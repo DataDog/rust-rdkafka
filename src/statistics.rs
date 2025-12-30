@@ -209,6 +209,8 @@ pub struct AdaptiveBatching {
     pub adjustments_up: i64,
     /// Count of speed-up adjustments (congestion cleared).
     pub adjustments_down: i64,
+    /// Count of backlog drain cycles (speeding up due to queue backlog).
+    pub backlog_drain_events: i64,
 }
 
 /// Rolling window statistics.
@@ -702,6 +704,7 @@ impl Broker {
                     int_lat_current_us: b.adaptive_int_lat_current_us,
                     adjustments_up: b.adaptive_adjustments_up,
                     adjustments_down: b.adaptive_adjustments_down,
+                    backlog_drain_events: b.adaptive_backlog_drain_events,
                 })
             } else {
                 None

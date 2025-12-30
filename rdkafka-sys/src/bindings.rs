@@ -219,6 +219,7 @@ pub struct rd_kafka_broker_stats_s {
     pub adaptive_int_lat_current_us: i64,
     pub adaptive_adjustments_up: i64,
     pub adaptive_adjustments_down: i64,
+    pub adaptive_backlog_drain_events: i64,
     pub req_cnt: u32,
     pub _pad2: u32,
     pub reqs: *mut rd_kafka_req_count_t,
