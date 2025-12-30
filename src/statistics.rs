@@ -174,6 +174,41 @@ pub struct Broker {
     pub produce_reqsize: Option<Window>,
     /// Rolling window statistics for ProduceRequest fill ratio (permille)
     pub produce_fill: Option<Window>,
+
+    /// Adaptive batching statistics (only present when adaptive batching is enabled)
+    pub adaptive: Option<AdaptiveBatching>,
+}
+
+/// Adaptive batching statistics.
+///
+/// These statistics are only populated when adaptive batching is enabled
+/// (`adaptive.batching.enable = true`).
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct AdaptiveBatching {
+    /// Whether adaptive batching is enabled.
+    pub enabled: bool,
+    /// Current adaptive linger time in microseconds.
+    pub linger_us: i64,
+    /// Current adaptive batch max bytes.
+    pub batch_max_bytes: i64,
+    /// Combined congestion score (0.0 = no congestion).
+    pub congestion: f64,
+    /// RTT-based congestion component (Vegas-style).
+    pub rtt_congestion: f64,
+    /// Internal latency congestion component.
+    pub int_lat_congestion: f64,
+    /// RTT baseline in microseconds (minimum observed).
+    pub rtt_base_us: i64,
+    /// Current smoothed RTT in microseconds.
+    pub rtt_current_us: i64,
+    /// Internal latency baseline in microseconds.
+    pub int_lat_base_us: i64,
+    /// Current smoothed internal latency in microseconds.
+    pub int_lat_current_us: i64,
+    /// Count of slow-down adjustments (congestion detected).
+    pub adjustments_up: i64,
+    /// Count of speed-up adjustments (congestion cleared).
+    pub adjustments_down: i64,
 }
 
 /// Rolling window statistics.
@@ -653,6 +688,24 @@ impl Broker {
             produce_messages: Some(Window::from_native(&b.produce_messages)),
             produce_reqsize: Some(Window::from_native(&b.produce_reqsize)),
             produce_fill: Some(Window::from_native(&b.produce_fill)),
+            adaptive: if b.adaptive_enabled != 0 {
+                Some(AdaptiveBatching {
+                    enabled: true,
+                    linger_us: b.adaptive_linger_us,
+                    batch_max_bytes: b.adaptive_batch_max_bytes,
+                    congestion: b.adaptive_congestion,
+                    rtt_congestion: b.adaptive_rtt_congestion,
+                    int_lat_congestion: b.adaptive_int_lat_congestion,
+                    rtt_base_us: b.adaptive_rtt_base_us,
+                    rtt_current_us: b.adaptive_rtt_current_us,
+                    int_lat_base_us: b.adaptive_int_lat_base_us,
+                    int_lat_current_us: b.adaptive_int_lat_current_us,
+                    adjustments_up: b.adaptive_adjustments_up,
+                    adjustments_down: b.adaptive_adjustments_down,
+                })
+            } else {
+                None
+            },
         }
     }
 }
