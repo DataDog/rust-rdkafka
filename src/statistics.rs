@@ -174,6 +174,9 @@ pub struct Broker {
     pub produce_reqsize: Option<Window>,
     /// Rolling window statistics for ProduceRequest fill ratio (permille)
     pub produce_fill: Option<Window>,
+    /// Rolling window statistics for how long it takes for a batch to go
+    /// from ready to the xmit_queue
+    pub batch_wait: Option<Window>,
 
     /// Adaptive batching statistics (only present when adaptive batching is enabled)
     pub adaptive: Option<AdaptiveBatching>,
@@ -690,6 +693,7 @@ impl Broker {
             produce_messages: Some(Window::from_native(&b.produce_messages)),
             produce_reqsize: Some(Window::from_native(&b.produce_reqsize)),
             produce_fill: Some(Window::from_native(&b.produce_fill)),
+            batch_wait: Some(Window::from_native(&b.batch_wait)),
             adaptive: if b.adaptive_enabled != 0 {
                 Some(AdaptiveBatching {
                     enabled: true,
