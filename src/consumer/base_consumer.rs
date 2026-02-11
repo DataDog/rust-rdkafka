@@ -418,13 +418,16 @@ where
     }
 
     fn subscribe(&self, topics: &[&str]) -> KafkaResult<()> {
+        warn!("Calling subscribe in rust_rdkafka");
         let mut tpl = TopicPartitionList::new();
         for topic in topics {
             tpl.add_topic_unassigned(topic);
         }
         let ret_code = unsafe { rdsys::rd_kafka_subscribe(self.client.native_ptr(), tpl.ptr()) };
+        warn!("finished calling subscribe in rust_rdkafka");
         if ret_code.is_error() {
             let error = unsafe { cstr_to_owned(rdsys::rd_kafka_err2str(ret_code)) };
+            warn!("ret_code is error = {}", error);
             return Err(KafkaError::Subscription(error));
         };
         Ok(())
