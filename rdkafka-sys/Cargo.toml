@@ -1,6 +1,6 @@
 [package]
 name = "rdkafka-sys"
-version = "5.1.0+2.10.3-rodrigo-new-multibatch-v1"
+version = "5.1.0+2.10.3-mb-v2"
 authors = ["Federico Giraud <giraud.federico@gmail.com>"]
 build = "build.rs"
 links = "rdkafka"
