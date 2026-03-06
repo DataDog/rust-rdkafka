@@ -11,7 +11,9 @@
 //! [librdkafka-stats]: https://github.com/edenhill/librdkafka/blob/master/STATISTICS.md
 
 use std::collections::HashMap;
+use std::os::raw::c_char;
 
+use rdkafka_sys as rdsys;
 use serde::{Deserialize, Serialize};
 
 /// Overall statistics.
@@ -162,6 +164,56 @@ pub struct Broker {
     pub throttle: Option<Window>,
     /// The partitions that are handled by this broker handle.
     pub toppars: HashMap<String, TopicPartition>,
+
+    // The following produce statistics are available as of librdkafka 2.10.3
+    /// Rolling window statistics for partitions per ProduceRequest
+    pub produce_partitions: Option<Window>,
+    /// Rolling window statistics for messages per ProduceRequest
+    pub produce_messages: Option<Window>,
+    /// Rolling window statistics for bytes per produce_request
+    pub produce_reqsize: Option<Window>,
+    /// Rolling window statistics for ProduceRequest fill ratio (permille)
+    pub produce_fill: Option<Window>,
+    /// Rolling window statistics for how long it takes for a batch to go
+    /// from ready to the xmit_queue
+    pub batch_wait: Option<Window>,
+
+    /// Adaptive batching statistics (only present when adaptive batching is enabled)
+    pub adaptive: Option<AdaptiveBatching>,
+}
+
+/// Adaptive batching statistics.
+///
+/// These statistics are only populated when adaptive batching is enabled
+/// (`adaptive.batching.enable = true`).
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct AdaptiveBatching {
+    /// Whether adaptive batching is enabled.
+    pub enabled: bool,
+    /// Current adaptive linger time in microseconds.
+    pub linger_us: i64,
+    /// Current adaptive batch max bytes.
+    pub batch_max_bytes: i64,
+    /// Combined congestion score (0.0 = no congestion).
+    pub congestion: f64,
+    /// RTT-based congestion component (Vegas-style).
+    pub rtt_congestion: f64,
+    /// Internal latency congestion component.
+    pub int_lat_congestion: f64,
+    /// RTT baseline in microseconds (minimum observed).
+    pub rtt_base_us: i64,
+    /// Current smoothed RTT in microseconds.
+    pub rtt_current_us: i64,
+    /// Internal latency baseline in microseconds.
+    pub int_lat_base_us: i64,
+    /// Current smoothed internal latency in microseconds.
+    pub int_lat_current_us: i64,
+    /// Count of slow-down adjustments (congestion detected).
+    pub adjustments_up: i64,
+    /// Count of speed-up adjustments (congestion cleared).
+    pub adjustments_down: i64,
+    /// Count of backlog drain cycles (speeding up due to queue backlog).
+    pub backlog_drain_events: i64,
 }
 
 /// Rolling window statistics.
@@ -344,6 +396,425 @@ pub struct ExactlyOnceSemantics {
     pub epoch_cnt: i64,
 }
 
+// ============================================================================
+// Native (C struct) to Rust conversions
+// ============================================================================
+
+/// Helper to convert a C char array to a Rust String.
+/// Safely handles non-null-terminated arrays by using the array length as max.
+fn c_char_array_to_string<const N: usize>(arr: &[c_char; N]) -> String {
+    // Safety: We're treating the c_char array as bytes
+    let bytes: &[u8] = unsafe { std::slice::from_raw_parts(arr.as_ptr() as *const u8, N) };
+
+    // Find the null terminator or use the full length
+    let len = bytes.iter().position(|&b| b == 0).unwrap_or(N);
+
+    String::from_utf8_lossy(&bytes[..len]).into_owned()
+}
+
+/// Broker state integer to string mapping.
+/// Uses the rd_kafka_broker_state_names array exposed by librdkafka.
+fn broker_state_to_string(state: i32) -> String {
+    if state < 0 || state >= rdsys::RD_KAFKA_BROKER_STATE_COUNT {
+        return "UNKNOWN".to_owned();
+    }
+    unsafe {
+        let base = std::ptr::addr_of!(rdsys::rd_kafka_broker_state_names) as *const *const c_char;
+        let ptr = *base.add(state as usize);
+        if ptr.is_null() {
+            return "UNKNOWN".to_owned();
+        }
+        std::ffi::CStr::from_ptr(ptr)
+            .to_str()
+            .unwrap_or("UNKNOWN")
+            .to_owned()
+    }
+}
+
+/// Partition fetch state integer to string mapping.
+/// Uses the rd_kafka_fetch_states array exposed by librdkafka.
+fn fetch_state_to_string(state: i32) -> String {
+    if state < 0 || state >= rdsys::RD_KAFKA_FETCH_STATE_COUNT {
+        return "unknown".to_owned();
+    }
+    unsafe {
+        let base = std::ptr::addr_of!(rdsys::rd_kafka_fetch_states) as *const *const c_char;
+        let ptr = *base.add(state as usize);
+        if ptr.is_null() {
+            return "unknown".to_owned();
+        }
+        std::ffi::CStr::from_ptr(ptr)
+            .to_str()
+            .unwrap_or("unknown")
+            .to_owned()
+    }
+}
+
+/// Client type integer to string mapping.
+fn client_type_to_string(type_: i32) -> String {
+    match type_ {
+        0 => "producer",
+        1 => "consumer",
+        _ => "unknown",
+    }
+    .to_string()
+}
+
+/// Consumer group state to string.
+fn cgrp_state_to_string(state: i32) -> String {
+    match state {
+        0 => "init",
+        1 => "term",
+        2 => "query-coord",
+        3 => "wait-coord",
+        4 => "wait-broker",
+        5 => "wait-broker-transport",
+        6 => "up",
+        _ => "unknown",
+    }
+    .to_string()
+}
+
+/// Consumer group join state to string.
+fn cgrp_join_state_to_string(state: i32) -> String {
+    match state {
+        0 => "init",
+        1 => "wait-join",
+        2 => "wait-metadata",
+        3 => "wait-sync",
+        4 => "wait-unassign",
+        5 => "wait-unassign-call",
+        6 => "wait-assign-call",
+        7 => "wait-rebalance-cb",
+        8 => "wait-change",
+        9 => "steady",
+        _ => "unknown",
+    }
+    .to_string()
+}
+
+/// Idempotent producer state to string.
+fn idemp_state_to_string(state: i32) -> String {
+    match state {
+        0 => "Init",
+        1 => "WaitTransport",
+        2 => "WaitPID",
+        3 => "Assigned",
+        4 => "DrainReset",
+        5 => "DrainBump",
+        6 => "WaitPIDRotate",
+        7 => "Term",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+/// Transactional producer state to string.
+fn txn_state_to_string(state: i32) -> String {
+    match state {
+        0 => "Init",
+        1 => "WaitPID",
+        2 => "Ready",
+        3 => "InTransaction",
+        4 => "BeginCommit",
+        5 => "CommittingTransaction",
+        6 => "BeginAbort",
+        7 => "AbortingTransaction",
+        _ => "Unknown",
+    }
+    .to_string()
+}
+
+impl Window {
+    /// Convert from native rd_kafka_avg_stats_t.
+    pub fn from_native(avg: &rdsys::rd_kafka_avg_stats_t) -> Self {
+        Window {
+            min: avg.min,
+            max: avg.max,
+            avg: avg.avg,
+            sum: avg.sum,
+            cnt: avg.cnt,
+            stddev: avg.stddev,
+            hdrsize: avg.hdrsize as i64,
+            p50: avg.p50,
+            p75: avg.p75,
+            p90: avg.p90,
+            p95: avg.p95,
+            p99: avg.p99,
+            p99_99: avg.p99_99,
+            outofrange: avg.oor,
+        }
+    }
+}
+
+impl TopicPartition {
+    /// Convert from native rd_kafka_broker_toppar_ref_t.
+    pub fn from_native(tp: &rdsys::rd_kafka_broker_toppar_ref_t) -> Self {
+        TopicPartition {
+            topic: c_char_array_to_string(&tp.topic),
+            partition: tp.partition,
+        }
+    }
+}
+
+impl Partition {
+    /// Convert from native rd_kafka_partition_stats_t.
+    pub fn from_native(p: &rdsys::rd_kafka_partition_stats_t) -> Self {
+        Partition {
+            partition: p.partition,
+            broker: p.broker_id,
+            leader: p.leader,
+            desired: p.desired != 0,
+            unknown: p.unknown != 0,
+            msgq_cnt: p.msgq_cnt as i64,
+            msgq_bytes: p.msgq_bytes as u64,
+            xmit_msgq_cnt: p.xmit_msgq_cnt as i64,
+            xmit_msgq_bytes: p.xmit_msgq_bytes as u64,
+            fetchq_cnt: p.fetchq_cnt as i64,
+            fetchq_size: p.fetchq_size as u64,
+            fetch_state: fetch_state_to_string(p.fetch_state),
+            query_offset: p.query_offset,
+            next_offset: p.next_offset,
+            app_offset: p.app_offset,
+            stored_offset: p.stored_offset,
+            committed_offset: p.committed_offset,
+            eof_offset: p.eof_offset,
+            lo_offset: p.lo_offset,
+            hi_offset: p.hi_offset,
+            ls_offset: p.ls_offset,
+            consumer_lag: p.consumer_lag,
+            consumer_lag_stored: p.consumer_lag_stored,
+            txmsgs: p.txmsgs as u64,
+            txbytes: p.txbytes as u64,
+            rxmsgs: p.rxmsgs as u64,
+            rxbytes: p.rxbytes as u64,
+            msgs: p.msgs as u64,
+            rx_ver_drops: p.rx_ver_drops as u64,
+            msgs_inflight: p.msgs_inflight,
+            next_ack_seq: p.next_ack_seq,
+            next_err_seq: p.next_err_seq,
+            acked_msgid: p.acked_msgid as u64,
+        }
+    }
+}
+
+impl Topic {
+    /// Convert from native rd_kafka_topic_stats_t.
+    ///
+    /// # Safety
+    /// The `partitions` pointer must be valid for `partition_cnt` elements.
+    pub unsafe fn from_native(t: &rdsys::rd_kafka_topic_stats_t) -> Self {
+        let mut partitions = HashMap::new();
+
+        if !t.partitions.is_null() {
+            for i in 0..t.partition_cnt as usize {
+                let p = &*t.partitions.add(i);
+                partitions.insert(p.partition, Partition::from_native(p));
+            }
+        }
+
+        Topic {
+            topic: c_char_array_to_string(&t.name),
+            metadata_age: t.metadata_age_us / 1000, // Convert us to ms
+            batchsize: Window::from_native(&t.batchsize),
+            batchcnt: Window::from_native(&t.batchcnt),
+            partitions,
+        }
+    }
+}
+
+impl Broker {
+    /// Convert from native rd_kafka_broker_stats_t.
+    ///
+    /// # Safety
+    /// The `toppars` pointer must be valid for `toppar_cnt` elements.
+    pub unsafe fn from_native(b: &rdsys::rd_kafka_broker_stats_t) -> Self {
+        let mut toppars = HashMap::new();
+
+        if !b.toppars.is_null() {
+            for i in 0..b.toppar_cnt as usize {
+                let tp = &*b.toppars.add(i);
+                let key = format!("{}-{}", c_char_array_to_string(&tp.topic), tp.partition);
+                toppars.insert(key, TopicPartition::from_native(tp));
+            }
+        }
+
+        // Build request type counts HashMap from pre-populated reqs array
+        let mut req = HashMap::new();
+        if !b.reqs.is_null() {
+            for i in 0..b.req_cnt as usize {
+                let r = &*b.reqs.add(i);
+                let name = c_char_array_to_string(&r.name);
+                if r.count > 0 {
+                    req.insert(name, r.count);
+                }
+            }
+        }
+
+        Broker {
+            name: c_char_array_to_string(&b.name),
+            nodeid: b.nodeid,
+            nodename: c_char_array_to_string(&b.nodename),
+            source: c_char_array_to_string(&b.source),
+            state: broker_state_to_string(b.state),
+            stateage: b.stateage_us,
+            outbuf_cnt: b.outbuf_cnt as i64,
+            outbuf_msg_cnt: b.outbuf_msg_cnt as i64,
+            waitresp_cnt: b.waitresp_cnt as i64,
+            waitresp_msg_cnt: b.waitresp_msg_cnt as i64,
+            tx: b.tx as u64,
+            txbytes: b.tx_bytes as u64,
+            txerrs: b.tx_errs as u64,
+            txretries: b.tx_retries as u64,
+            txidle: b.tx_idle_us,
+            req_timeouts: b.req_timeouts as u64,
+            rx: b.rx as u64,
+            rxbytes: b.rx_bytes as u64,
+            rxerrs: b.rx_errs as u64,
+            rxcorriderrs: b.rx_corriderrs as u64,
+            rxpartial: b.rx_partial as u64,
+            rxidle: b.rx_idle_us,
+            req,
+            zbuf_grow: b.zbuf_grow as u64,
+            buf_grow: b.buf_grow as u64,
+            wakeups: Some(b.wakeups as u64),
+            connects: Some(b.connects),
+            disconnects: Some(b.disconnects),
+            int_latency: Some(Window::from_native(&b.int_latency)),
+            outbuf_latency: Some(Window::from_native(&b.outbuf_latency)),
+            rtt: Some(Window::from_native(&b.rtt)),
+            throttle: Some(Window::from_native(&b.throttle)),
+            toppars,
+            produce_partitions: Some(Window::from_native(&b.produce_partitions)),
+            produce_messages: Some(Window::from_native(&b.produce_messages)),
+            produce_reqsize: Some(Window::from_native(&b.produce_reqsize)),
+            produce_fill: Some(Window::from_native(&b.produce_fill)),
+            batch_wait: Some(Window::from_native(&b.batch_wait)),
+            adaptive: if b.adaptive_enabled != 0 {
+                Some(AdaptiveBatching {
+                    enabled: true,
+                    linger_us: b.adaptive_linger_us,
+                    batch_max_bytes: b.adaptive_batch_max_bytes,
+                    congestion: b.adaptive_congestion,
+                    rtt_congestion: b.adaptive_rtt_congestion,
+                    int_lat_congestion: b.adaptive_int_lat_congestion,
+                    rtt_base_us: b.adaptive_rtt_base_us,
+                    rtt_current_us: b.adaptive_rtt_current_us,
+                    int_lat_base_us: b.adaptive_int_lat_base_us,
+                    int_lat_current_us: b.adaptive_int_lat_current_us,
+                    adjustments_up: b.adaptive_adjustments_up,
+                    adjustments_down: b.adaptive_adjustments_down,
+                    backlog_drain_events: b.adaptive_backlog_drain_events,
+                })
+            } else {
+                None
+            },
+        }
+    }
+}
+
+impl ConsumerGroup {
+    /// Convert from native rd_kafka_cgrp_stats_t.
+    pub fn from_native(cg: &rdsys::rd_kafka_cgrp_stats_t) -> Self {
+        ConsumerGroup {
+            state: cgrp_state_to_string(cg.state),
+            stateage: cg.stateage_us / 1000, // Convert us to ms
+            join_state: cgrp_join_state_to_string(cg.join_state),
+            rebalance_age: cg.rebalance_age_us / 1000, // Convert us to ms
+            rebalance_cnt: cg.rebalance_cnt as i64,
+            rebalance_reason: c_char_array_to_string(&cg.rebalance_reason),
+            assignment_size: cg.assignment_size,
+        }
+    }
+}
+
+impl ExactlyOnceSemantics {
+    /// Convert from native rd_kafka_eos_stats_t.
+    pub fn from_native(eos: &rdsys::rd_kafka_eos_stats_t) -> Self {
+        ExactlyOnceSemantics {
+            idemp_state: idemp_state_to_string(eos.idemp_state),
+            idemp_stateage: eos.idemp_stateage_us / 1000, // Convert us to ms
+            txn_state: txn_state_to_string(eos.txn_state),
+            txn_stateage: eos.txn_stateage_us / 1000, // Convert us to ms
+            txn_may_enq: eos.txn_may_enq != 0,
+            producer_id: eos.producer_id,
+            producer_epoch: eos.producer_epoch as i64,
+            epoch_cnt: eos.epoch_cnt as i64,
+        }
+    }
+}
+
+impl Statistics {
+    /// Convert from native rd_kafka_stats_t.
+    ///
+    /// # Safety
+    /// The `brokers` and `topics` pointers must be valid for their respective counts.
+    pub unsafe fn from_native(stats: &rdsys::rd_kafka_stats_t) -> Self {
+        let mut brokers = HashMap::new();
+        let mut topics = HashMap::new();
+
+        // Convert brokers
+        if !stats.brokers.is_null() {
+            for i in 0..stats.broker_cnt as usize {
+                let b = &*stats.brokers.add(i);
+                let name = c_char_array_to_string(&b.name);
+                brokers.insert(name, Broker::from_native(b));
+            }
+        }
+
+        // Convert topics
+        if !stats.topics.is_null() {
+            for i in 0..stats.topic_cnt as usize {
+                let t = &*stats.topics.add(i);
+                let name = c_char_array_to_string(&t.name);
+                topics.insert(name, Topic::from_native(t));
+            }
+        }
+
+        // Convert optional consumer group stats
+        let cgrp = if stats.has_cgrp != 0 {
+            Some(ConsumerGroup::from_native(&stats.cgrp))
+        } else {
+            None
+        };
+
+        // Convert optional EOS stats
+        let eos = if stats.has_eos != 0 {
+            Some(ExactlyOnceSemantics::from_native(&stats.eos))
+        } else {
+            None
+        };
+
+        Statistics {
+            name: c_char_array_to_string(&stats.name),
+            client_id: c_char_array_to_string(&stats.client_id),
+            client_type: client_type_to_string(stats.type_),
+            ts: stats.ts_us,
+            time: stats.time_sec,
+            age: stats.age_us,
+            replyq: stats.replyq as i64,
+            msg_cnt: stats.msg_cnt as u64,
+            msg_size: stats.msg_size,
+            msg_max: stats.msg_max as u64,
+            msg_size_max: stats.msg_size_max,
+            tx: stats.tx,
+            tx_bytes: stats.tx_bytes,
+            rx: stats.rx,
+            rx_bytes: stats.rx_bytes,
+            txmsgs: stats.txmsgs,
+            txmsg_bytes: stats.txmsg_bytes,
+            rxmsgs: stats.rxmsgs,
+            rxmsg_bytes: stats.rxmsg_bytes,
+            simple_cnt: stats.simple_cnt as i64,
+            metadata_cache_cnt: stats.metadata_cache_cnt as i64,
+            brokers,
+            topics,
+            cgrp,
+            eos,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use maplit::hashmap;
@@ -386,6 +857,31 @@ mod tests {
                 "SaslAuthenticate".to_string() => 0,
             }
         );
+
+        // Verify new produce statistics fields
+        let produce_partitions = broker.produce_partitions.as_ref().unwrap();
+        assert_eq!(produce_partitions.min, 1);
+        assert_eq!(produce_partitions.max, 3);
+        assert_eq!(produce_partitions.avg, 2);
+        assert_eq!(produce_partitions.cnt, 4739);
+
+        let produce_messages = broker.produce_messages.as_ref().unwrap();
+        assert_eq!(produce_messages.min, 1);
+        assert_eq!(produce_messages.max, 18483);
+        assert_eq!(produce_messages.avg, 912);
+        assert_eq!(produce_messages.cnt, 4739);
+
+        let produce_reqsize = broker.produce_reqsize.as_ref().unwrap();
+        assert_eq!(produce_reqsize.min, 99);
+        assert_eq!(produce_reqsize.max, 720828);
+        assert_eq!(produce_reqsize.avg, 35613);
+        assert_eq!(produce_reqsize.cnt, 4739);
+
+        let produce_fill = broker.produce_fill.as_ref().unwrap();
+        assert_eq!(produce_fill.min, 0);
+        assert_eq!(produce_fill.max, 720);
+        assert_eq!(produce_fill.avg, 35);
+        assert_eq!(produce_fill.cnt, 4739);
 
         assert_eq!(stats.topics.len(), 1);
     }
@@ -526,6 +1022,70 @@ mod tests {
                 "topic": "test",
                 "partition": 2
               }
+            },
+            "produce_partitions": {
+              "min": 1,
+              "max": 3,
+              "avg": 2,
+              "sum": 9478,
+              "stddev": 1,
+              "p50": 2,
+              "p75": 3,
+              "p90": 3,
+              "p95": 3,
+              "p99": 3,
+              "p99_99": 3,
+              "outofrange": 0,
+              "hdrsize": 8304,
+              "cnt": 4739
+            },
+            "produce_messages": {
+              "min": 1,
+              "max": 18483,
+              "avg": 912,
+              "sum": 4322068,
+              "stddev": 1008,
+              "p50": 801,
+              "p75": 891,
+              "p90": 987,
+              "p95": 1059,
+              "p99": 5541,
+              "p99_99": 18495,
+              "outofrange": 0,
+              "hdrsize": 11376,
+              "cnt": 4739
+            },
+            "produce_reqsize": {
+              "min": 99,
+              "max": 720828,
+              "avg": 35613,
+              "sum": 168781107,
+              "stddev": 39411,
+              "p50": 31293,
+              "p75": 34749,
+              "p90": 38397,
+              "p95": 41469,
+              "p99": 216573,
+              "p99_99": 721919,
+              "outofrange": 0,
+              "hdrsize": 14448,
+              "cnt": 4739
+            },
+            "produce_fill": {
+              "min": 0,
+              "max": 720,
+              "avg": 35,
+              "sum": 165865,
+              "stddev": 39,
+              "p50": 31,
+              "p75": 34,
+              "p90": 38,
+              "p95": 41,
+              "p99": 216,
+              "p99_99": 721,
+              "outofrange": 0,
+              "hdrsize": 8304,
+              "cnt": 4739
             }
           }
         },

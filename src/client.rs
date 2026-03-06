@@ -28,7 +28,7 @@ use crate::config::{ClientConfig, NativeClientConfig, RDKafkaLogLevel};
 use crate::consumer::RebalanceProtocol;
 use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::groups::GroupList;
-use crate::log::{LogRecord, debug, error, info, trace, warn};
+use crate::log::{debug, error, info, trace, warn, LogRecord};
 use crate::metadata::Metadata;
 use crate::mocking::MockCluster;
 use crate::statistics::Statistics;
@@ -369,8 +369,16 @@ impl<C: ClientContext> Client<C> {
     }
 
     fn handle_stats_event(&self, event: *mut RDKafkaEvent) {
-        let json = unsafe { CStr::from_ptr(rdsys::rd_kafka_event_stats(event)) };
-        self.context().stats_raw(json.to_bytes());
+        // Try typed stats first (more efficient, no JSON parsing)
+        let stats_ptr = unsafe { rdsys::rd_kafka_event_stats_typed(event) };
+        if !stats_ptr.is_null() {
+            let stats = unsafe { Statistics::from_native(&*stats_ptr) };
+            self.context().stats(stats);
+        } else {
+            // Fall back to JSON parsing if typed stats not available
+            let json = unsafe { CStr::from_ptr(rdsys::rd_kafka_event_stats(event)) };
+            self.context().stats_raw(json.to_bytes());
+        }
     }
 
     fn handle_error_event(&self, event: *mut RDKafkaEvent) {

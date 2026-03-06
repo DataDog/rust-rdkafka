@@ -5,8 +5,8 @@ use std::marker::PhantomData;
 use std::os::raw::c_void;
 use std::pin::Pin;
 use std::ptr;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
@@ -16,8 +16,6 @@ use futures_util::future::{self, Either, FutureExt};
 use futures_util::pin_mut;
 use futures_util::stream::{Stream, StreamExt};
 
-use rdkafka_sys as rdsys;
-use rdkafka_sys::types::*;
 use crate::client::{Client, EventPollResult, NativeQueue};
 use crate::config::{ClientConfig, FromClientConfig, FromClientConfigAndContext};
 use crate::consumer::base_consumer::{BaseConsumer, PartitionQueue};
@@ -31,6 +29,8 @@ use crate::message::BorrowedMessage;
 use crate::metadata::Metadata;
 use crate::topic_partition_list::{Offset, TopicPartitionList};
 use crate::util::{AsyncRuntime, DefaultRuntime, Timeout};
+use rdkafka_sys as rdsys;
+use rdkafka_sys::types::*;
 
 unsafe extern "C" fn native_message_queue_nonempty_cb(_: *mut RDKafka, opaque_ptr: *mut c_void) {
     let wakers = &*(opaque_ptr as *const WakerQueue);
