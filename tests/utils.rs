@@ -14,7 +14,7 @@ use rdkafka::consumer::ConsumerContext;
 use rdkafka::error::KafkaResult;
 use rdkafka::message::ToBytes;
 use rdkafka::producer::{FutureProducer, FutureRecord};
-use rdkafka::statistics::Statistics;
+use rdkafka::statistics::StatsView;
 use rdkafka::TopicPartitionList;
 
 pub fn rand_test_topic(test_name: &str) -> String {
@@ -79,7 +79,7 @@ pub struct ProducerTestContext {
 }
 
 impl ClientContext for ProducerTestContext {
-    fn stats(&self, _: Statistics) {} // Don't print stats
+    fn stats_view(&self, _: StatsView<'_>) {} // Don't print stats
 }
 
 pub async fn create_topic(name: &str, partitions: i32) {
@@ -167,11 +167,7 @@ pub struct ConsumerTestContext {
 }
 
 impl ClientContext for ConsumerTestContext {
-    // Access stats
-    fn stats(&self, stats: Statistics) {
-        let stats_str = format!("{:?}", stats);
-        println!("Stats received: {} bytes", stats_str.len());
-    }
+    fn stats_view(&self, _: StatsView<'_>) {}
 }
 
 impl ConsumerContext for ConsumerTestContext {

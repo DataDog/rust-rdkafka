@@ -16,9 +16,10 @@ use rdkafka::producer::{
     BaseProducer, BaseRecord, DeliveryResult, NoCustomPartitioner, Partitioner, Producer,
     ProducerContext, ThreadedProducer,
 };
+use rdkafka::statistics::StatsView;
 use rdkafka::types::RDKafkaRespErr;
 use rdkafka::util::current_time_millis;
-use rdkafka::{ClientContext, Statistics};
+use rdkafka::ClientContext;
 
 use crate::utils::*;
 
@@ -29,10 +30,13 @@ struct PrintingContext {
 }
 
 impl ClientContext for PrintingContext {
-    // Access and use all stats.
-    fn stats(&self, stats: Statistics) {
-        let stats_str = format!("{:?}", stats);
-        println!("Stats received: {} bytes", stats_str.len());
+    fn stats_view(&self, stats: StatsView<'_>) {
+        println!(
+            "Stats received: name={}, client_id={}, msg_cnt={}",
+            stats.name(),
+            stats.client_id(),
+            stats.msg_cnt()
+        );
     }
 }
 
@@ -48,7 +52,6 @@ type TestProducerDeliveryResult = (OwnedMessage, Option<KafkaError>, usize);
 
 #[derive(Clone)]
 struct CollectingContext<Part: Partitioner = NoCustomPartitioner> {
-    stats: Arc<Mutex<Vec<Statistics>>>,
     results: Arc<Mutex<Vec<TestProducerDeliveryResult>>>,
     partitioner: Option<Part>,
 }
@@ -56,7 +59,6 @@ struct CollectingContext<Part: Partitioner = NoCustomPartitioner> {
 impl CollectingContext {
     fn new() -> CollectingContext {
         CollectingContext {
-            stats: Arc::new(Mutex::new(Vec::new())),
             results: Arc::new(Mutex::new(Vec::new())),
             partitioner: None,
         }
@@ -66,7 +68,6 @@ impl CollectingContext {
 impl<Part: Partitioner> CollectingContext<Part> {
     fn new_with_custom_partitioner(partitioner: Part) -> CollectingContext<Part> {
         CollectingContext {
-            stats: Arc::new(Mutex::new(Vec::new())),
             results: Arc::new(Mutex::new(Vec::new())),
             partitioner: Some(partitioner),
         }
@@ -74,11 +75,7 @@ impl<Part: Partitioner> CollectingContext<Part> {
 }
 
 impl<Part: Partitioner + Send + Sync> ClientContext for CollectingContext<Part> {
-    // Access and use all stats.
-    fn stats(&self, stats: Statistics) {
-        let mut stats_vec = self.stats.lock().unwrap();
-        (*stats_vec).push(stats);
-    }
+    fn stats_view(&self, _: StatsView<'_>) {}
 }
 
 impl<Part: Partitioner + Send + Sync> ProducerContext<Part> for CollectingContext<Part> {

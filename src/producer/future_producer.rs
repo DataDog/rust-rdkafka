@@ -24,7 +24,7 @@ use crate::producer::{
     BaseRecord, DeliveryResult, NoCustomPartitioner, Producer, ProducerContext, PurgeConfig,
     ThreadedProducer,
 };
-use crate::statistics::Statistics;
+use crate::statistics::StatsView;
 use crate::topic_partition_list::TopicPartitionList;
 use crate::util::{AsyncRuntime, DefaultRuntime, IntoOpaque, Timeout};
 
@@ -150,12 +150,12 @@ impl<C: ClientContext + 'static> ClientContext for FutureProducerContext<C> {
         self.wrapped_context.log(record);
     }
 
-    fn stats(&self, statistics: Statistics) {
-        self.wrapped_context.stats(statistics);
-    }
-
     fn stats_raw(&self, statistics: &[u8]) {
         self.wrapped_context.stats_raw(statistics)
+    }
+
+    fn stats_view(&self, stats: StatsView<'_>) {
+        self.wrapped_context.stats_view(stats);
     }
 
     fn error(&self, error: KafkaError, reason: &str) {
