@@ -1,4 +1,4 @@
 [submodule "rdkafka-sys/librdkafka"]
     path = rdkafka-sys/librdkafka
     url = https://github.com/DataDog/librdkafka
-    branch = rodrigo.silvamendoza/new-multibatch-clean
+    branch = rodrigo.silvamendoza/new-librdkafka-multibatch-clean-further-work
