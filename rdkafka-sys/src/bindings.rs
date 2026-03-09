@@ -179,8 +179,6 @@ pub struct rd_kafka_broker_stats_s {
     pub waitresp_cnt: i32,
     pub waitresp_msg_cnt: i32,
     pub tx: i64,
-    pub tx_iovecs: i64,
-    pub tx_multiseg: i64,
     pub tx_bytes: i64,
     pub tx_errs: i64,
     pub tx_retries: i64,
