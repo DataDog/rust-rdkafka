@@ -52,8 +52,6 @@ pub const RD_KAFKA_EVENT_DESCRIBETOPICS_RESULT: i32 = 1048576;
 pub const RD_KAFKA_EVENT_DESCRIBECLUSTER_RESULT: i32 = 2097152;
 pub const RD_KAFKA_EVENT_LISTOFFSETS_RESULT: i32 = 4194304;
 pub const RD_KAFKA_EVENT_ELECTLEADERS_RESULT: i32 = 8388608;
-pub const RD_KAFKA_BROKER_STATE_COUNT: i32 = 8;
-pub const RD_KAFKA_FETCH_STATE_COUNT: i32 = 6;
 unsafe extern "C" {
     pub fn rd_kafka_version() -> c_int;
 }
@@ -305,12 +303,6 @@ pub type rd_kafka_stats_t = rd_kafka_stats_s;
 #[derive(Debug, Copy, Clone)]
 pub struct rd_kafka_s {
     _unused: [u8; 0],
-}
-unsafe extern "C" {
-    pub fn rd_kafka_stats_new(rk: *mut rd_kafka_s) -> *mut rd_kafka_stats_t;
-}
-unsafe extern "C" {
-    pub fn rd_kafka_stats_destroy(stats: *mut rd_kafka_stats_t);
 }
 pub type rd_kafka_t = rd_kafka_s;
 #[repr(C)]
@@ -2122,12 +2114,6 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn rd_kafka_event_stats_typed(rkev: *mut rd_kafka_event_t) -> *const rd_kafka_stats_t;
-}
-unsafe extern "C" {
-    pub static mut rd_kafka_broker_state_names: [*const c_char; 0usize];
-}
-unsafe extern "C" {
-    pub static mut rd_kafka_fetch_states: [*const c_char; 0usize];
 }
 unsafe extern "C" {
     pub fn rd_kafka_event_topic_partition_list(
