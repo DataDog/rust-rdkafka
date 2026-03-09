@@ -28,10 +28,10 @@ use crate::config::{ClientConfig, NativeClientConfig, RDKafkaLogLevel};
 use crate::consumer::RebalanceProtocol;
 use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::groups::GroupList;
-use crate::log::{LogRecord, debug, error, info, trace, warn};
+use crate::log::{debug, error, info, trace, warn, LogRecord};
 use crate::metadata::Metadata;
 use crate::mocking::MockCluster;
-use crate::statistics::Statistics;
+use crate::statistics::StatsView;
 use crate::util::{self, ErrBuf, KafkaDrop, NativePtr, Timeout};
 
 /// Client-level context.
@@ -85,25 +85,29 @@ pub trait ClientContext: Send + Sync {
         }
     }
 
-    /// Receives the decoded statistics of the librdkafka client. To enable, the
-    /// `statistics.interval.ms` configuration parameter must be specified.
-    ///
-    /// The default implementation logs the statistics at the `info` log level.
-    fn stats(&self, statistics: Statistics) {
-        info!("Client stats: {:?}", statistics);
+    #[doc(hidden)]
+    fn stats_view(&self, stats: StatsView<'_>) {
+        info!(
+            "Client stats: name={}, client_id={}, type={}, msg_cnt={}, msg_size={}",
+            stats.name(),
+            stats.client_id(),
+            stats.client_type().as_str(),
+            stats.msg_cnt(),
+            stats.msg_size()
+        );
     }
 
     /// Receives the JSON-encoded statistics of the librdkafka client. To
     /// enable, the `statistics.interval.ms` configuration parameter must be
     /// specified.
     ///
-    /// The default implementation calls [`ClientContext::stats`] with the
-    /// decoded statistics, logging an error if the decoding fails.
+    /// The default implementation logs the raw statistics JSON at the `info`
+    /// log level.
     fn stats_raw(&self, statistics: &[u8]) {
-        match serde_json::from_slice(statistics) {
-            Ok(stats) => self.stats(stats),
-            Err(e) => error!("Could not parse statistics JSON: {}", e),
-        }
+        info!(
+            "Client stats raw JSON: {}",
+            String::from_utf8_lossy(statistics)
+        );
     }
 
     /// Receives global errors from the librdkafka client.
@@ -369,6 +373,14 @@ impl<C: ClientContext> Client<C> {
     }
 
     fn handle_stats_event(&self, event: *mut RDKafkaEvent) {
+        // Try typed stats first (more efficient, no JSON parsing)
+        let stats_ptr = unsafe { rdsys::rd_kafka_event_stats_typed(event) };
+        if !stats_ptr.is_null() {
+            let view = unsafe { StatsView::new(&*stats_ptr) };
+            self.context().stats_view(view);
+            return;
+        }
+        // Fall back to JSON parsing if typed stats not available
         let json = unsafe { CStr::from_ptr(rdsys::rd_kafka_event_stats(event)) };
         self.context().stats_raw(json.to_bytes());
     }
