@@ -285,6 +285,8 @@ pub mod metadata;
 pub mod mocking;
 pub mod producer;
 pub mod statistics;
+#[allow(dead_code)]
+mod statistics_view;
 pub mod topic_partition_list;
 pub mod util;
 
@@ -293,5 +295,6 @@ pub use crate::client::ClientContext;
 pub use crate::config::ClientConfig;
 pub use crate::log::LogRecord;
 pub use crate::message::{Message, Timestamp};
+pub use crate::statistics::Statistics;
 pub use crate::topic_partition_list::{Offset, TopicPartitionList};
 pub use crate::util::IntoOpaque;
