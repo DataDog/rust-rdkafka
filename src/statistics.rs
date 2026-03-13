@@ -2,1201 +2,759 @@
 //!
 //! These statistics are collected automatically by librdkafka when the client
 //! is configured with a non-zero `statistics.interval.ms`. They are made
-//! available via the [`ClientContext::stats_view`] callback.
+//! available via the [`ClientContext::stats`] callback.
 //!
 //! Refer to the [librdkafka statistics documentation][librdkafka-stats] for
 //! details.
 //!
-//! [`ClientContext::stats_view`]: crate::ClientContext::stats_view
+//! [`ClientContext::stats`]: crate::ClientContext::stats
 //! [librdkafka-stats]: https://github.com/edenhill/librdkafka/blob/master/STATISTICS.md
 
-use std::borrow::Cow;
-use std::os::raw::c_char;
+use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 
-use rdkafka_sys as rdsys;
-
-#[inline]
-unsafe fn slice_from_ptr_count<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
-    if ptr.is_null() || count == 0 {
-        &[]
-    } else {
-        std::slice::from_raw_parts(ptr, count)
-    }
+/// Overall statistics.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct Statistics {
+    /// The name of the librdkafka handle.
+    pub name: String,
+    /// The configured `client.id`.
+    pub client_id: String,
+    /// The instance type (producer or consumer).
+    #[serde(rename = "type")]
+    pub client_type: String,
+    /// The current value of librdkafka's internal monotonic clock, in
+    /// microseconds since start.
+    pub ts: i64,
+    /// Wall clock time, in seconds since the Unix epoch.
+    pub time: i64,
+    /// Time since this client instance was created, in microseconds.
+    pub age: i64,
+    /// The number of operations (callbacks, events, etc.) waiting in queue.
+    pub replyq: i64,
+    /// The current number of messages in producer queues.
+    pub msg_cnt: u64,
+    /// The current total size of messages in producer queues.
+    pub msg_size: u64,
+    /// The maximum number of messages allowed in the producer queues.
+    pub msg_max: u64,
+    /// The maximum total size of messages allowed in the producer queues.
+    pub msg_size_max: u64,
+    /// The total number of requests sent to brokers.
+    pub tx: i64,
+    /// The total number of bytes transmitted to brokers.
+    pub tx_bytes: i64,
+    /// The total number of responses received from brokers.
+    pub rx: i64,
+    /// The total number of bytes received from brokers.
+    pub rx_bytes: i64,
+    /// The total number of messages transmitted (produced) to brokers.
+    pub txmsgs: i64,
+    /// The total number of bytes transmitted (produced) to brokers.
+    pub txmsg_bytes: i64,
+    /// The total number of messages consumed from brokers, not including
+    /// ignored messages.
+    pub rxmsgs: i64,
+    /// The total number of bytes (including framing) consumed from brokers.
+    pub rxmsg_bytes: i64,
+    /// Internal tracking of legacy vs. new consumer API state.
+    pub simple_cnt: i64,
+    /// Number of topics in the metadata cache.
+    pub metadata_cache_cnt: i64,
+    /// Per-broker statistics.
+    pub brokers: HashMap<String, Broker>,
+    /// Per-topic statistics.
+    pub topics: HashMap<String, Topic>,
+    /// Consumer group statistics.
+    pub cgrp: Option<ConsumerGroup>,
+    /// Exactly-once semantics and idempotent producer statistics.
+    pub eos: Option<ExactlyOnceSemantics>,
 }
 
-#[inline]
-fn c_char_array_to_cow<'a, const N: usize>(arr: &'a [c_char; N]) -> Cow<'a, str> {
-    let bytes: &'a [u8] = unsafe { std::slice::from_raw_parts(arr.as_ptr() as *const u8, N) };
-    let len = bytes.iter().position(|&b| b == 0).unwrap_or(N);
-    String::from_utf8_lossy(&bytes[..len])
+/// Per-broker statistics.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct Broker {
+    /// The broker hostname, port, and ID, in the form `HOSTNAME:PORT/ID`.
+    pub name: String,
+    /// The broker ID (-1 for bootstraps).
+    pub nodeid: i32,
+    /// The broker hostname and port.
+    pub nodename: String,
+    /// The broker source (learned, configured, internal, or logical).
+    pub source: String,
+    /// The broker state (INIT, DOWN, CONNECT, AUTH, APIVERSION_QUERY,
+    /// AUTH_HANDSHAKE, UP, UPDATE).
+    pub state: String,
+    /// The time since the last broker state change, in microseconds.
+    pub stateage: i64,
+    /// The number of requests awaiting transmission to the broker.
+    pub outbuf_cnt: i64,
+    /// The number of messages awaiting transmission to the broker.
+    pub outbuf_msg_cnt: i64,
+    /// The number of requests in-flight to the broker that are awaiting a
+    /// response.
+    pub waitresp_cnt: i64,
+    /// The number of messages in-flight to the broker that are awaiting a
+    /// response.
+    pub waitresp_msg_cnt: i64,
+    /// The total number of requests sent to the broker.
+    pub tx: u64,
+    /// The total number of bytes sent to the broker.
+    pub txbytes: u64,
+    /// The total number of transmission errors.
+    pub txerrs: u64,
+    /// The total number of request retries.
+    pub txretries: u64,
+    /// Microseconds since last socket send, or -1 if no sends yet for the
+    /// current connection.
+    pub txidle: i64,
+    /// The total number of requests that timed out.
+    pub req_timeouts: u64,
+    /// The total number of responses received from the broker.
+    pub rx: u64,
+    /// The total number of bytes received from the broker.
+    pub rxbytes: u64,
+    /// The total number of receive errors.
+    pub rxerrs: u64,
+    /// The number of unmatched correlation IDs in response, typically for
+    /// timed out requests.
+    pub rxcorriderrs: u64,
+    /// The total number of partial message sets received.
+    pub rxpartial: u64,
+    /// Microseconds since last socket receive, or -1 if no receives yet for the
+    /// current connection.
+    pub rxidle: i64,
+    /// Request type counters.
+    pub req: HashMap<String, i64>,
+    /// The total number of decompression buffer size increases.
+    pub zbuf_grow: u64,
+    /// The total number of buffer size increases (deprecated and unused).
+    pub buf_grow: u64,
+    /// The number of broker thread poll wakeups.
+    pub wakeups: Option<u64>,
+    /// The number of connection attempts.
+    pub connects: Option<i64>,
+    /// The number of disconnections.
+    pub disconnects: Option<i64>,
+    /// Rolling window statistics for the internal producer queue latency, in
+    /// microseconds.
+    pub int_latency: Option<Window>,
+    /// Rolling window statistics for the internal request queue latency, in
+    /// microseconds.
+    pub outbuf_latency: Option<Window>,
+    /// Rolling window statistics for the broker latency/round-trip time, in
+    /// microseconds.
+    pub rtt: Option<Window>,
+    /// Rolling window statistics for the broker throttling time, in
+    /// milliseconds.
+    pub throttle: Option<Window>,
+    /// The partitions that are handled by this broker handle.
+    pub toppars: HashMap<String, TopicPartition>,
+
+    // The following produce statistics are available as of librdkafka 2.10.3
+    /// Rolling window statistics for partitions per ProduceRequest.
+    pub produce_partitions: Option<Window>,
+    /// Rolling window statistics for messages per ProduceRequest.
+    pub produce_messages: Option<Window>,
+    /// Rolling window statistics for bytes per ProduceRequest.
+    pub produce_reqsize: Option<Window>,
+    /// Rolling window statistics for ProduceRequest fill ratio (permille).
+    pub produce_fill: Option<Window>,
+    /// Rolling window statistics for how long it takes for a batch to go from
+    /// ready to the transmit queue.
+    pub batch_wait: Option<Window>,
+    /// Adaptive batching statistics (only present when adaptive batching is
+    /// enabled).
+    pub adaptive: Option<AdaptiveBatching>,
 }
 
-#[doc(hidden)]
-#[derive(Copy, Clone)]
-pub struct StatsView<'a> {
-    raw: &'a rdsys::rd_kafka_stats_t,
-    brokers: &'a [rdsys::rd_kafka_broker_stats_t],
-    topics: &'a [rdsys::rd_kafka_topic_stats_t],
+/// Adaptive batching statistics.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct AdaptiveBatching {
+    /// Whether adaptive batching is enabled.
+    pub enabled: bool,
+    /// Current adaptive linger time in microseconds.
+    pub linger_us: i64,
+    /// Current adaptive batch max bytes.
+    pub batch_max_bytes: i64,
+    /// Combined congestion score (0.0 = no congestion).
+    pub congestion: f64,
+    /// RTT-based congestion component (Vegas-style).
+    pub rtt_congestion: f64,
+    /// Internal latency congestion component.
+    pub int_lat_congestion: f64,
+    /// RTT baseline in microseconds (minimum observed).
+    pub rtt_base_us: i64,
+    /// Current smoothed RTT in microseconds.
+    pub rtt_current_us: i64,
+    /// Internal latency baseline in microseconds.
+    pub int_lat_base_us: i64,
+    /// Current smoothed internal latency in microseconds.
+    pub int_lat_current_us: i64,
+    /// Count of slow-down adjustments (congestion detected).
+    pub adjustments_up: i64,
+    /// Count of speed-up adjustments (congestion cleared).
+    pub adjustments_down: i64,
+    /// Count of backlog drain cycles (speeding up due to queue backlog).
+    pub backlog_drain_events: i64,
 }
 
-#[doc(hidden)]
-#[derive(Copy, Clone)]
-pub struct BrokerView<'a> {
-    raw: &'a rdsys::rd_kafka_broker_stats_t,
-    reqs: &'a [rdsys::rd_kafka_req_count_t],
+/// Rolling window statistics.
+///
+/// These values are not exact; they are sampled estimates maintained by an
+/// HDR histogram in librdkafka.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct Window {
+    /// The smallest value.
+    pub min: i64,
+    /// The largest value.
+    pub max: i64,
+    /// The mean value.
+    pub avg: i64,
+    /// The sum of all values.
+    pub sum: i64,
+    /// The total number of values.
+    pub cnt: i64,
+    /// The standard deviation.
+    pub stddev: i64,
+    /// The memory size of the underlying HDR histogram.
+    pub hdrsize: i64,
+    /// The 50th percentile.
+    pub p50: i64,
+    /// The 75th percentile.
+    pub p75: i64,
+    /// The 90th percentile.
+    pub p90: i64,
+    /// The 95th percentile.
+    pub p95: i64,
+    /// The 99th percentile.
+    pub p99: i64,
+    /// The 99.99th percentile.
+    pub p99_99: i64,
+    /// The number of values not included in the underlying histogram because
+    /// they were out of range.
+    pub outofrange: i64,
 }
 
-#[doc(hidden)]
-#[derive(Copy, Clone)]
-pub struct TopicView<'a> {
-    raw: &'a rdsys::rd_kafka_topic_stats_t,
-    partitions: &'a [rdsys::rd_kafka_partition_stats_t],
+/// A topic and partition specifier.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct TopicPartition {
+    /// The name of the topic.
+    pub topic: String,
+    /// The ID of the partition.
+    pub partition: i32,
 }
 
-#[doc(hidden)]
-#[derive(Copy, Clone)]
-pub struct PartitionView<'a> {
-    raw: &'a rdsys::rd_kafka_partition_stats_t,
+/// Per-topic statistics.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct Topic {
+    /// The name of the topic.
+    pub topic: String,
+    /// The age of the client's metadata for this topic, in milliseconds.
+    pub metadata_age: i64,
+    /// Rolling window statistics for batch sizes, in bytes.
+    pub batchsize: Window,
+    /// Rolling window statistics for batch message counts.
+    pub batchcnt: Window,
+    /// Per-partition statistics.
+    pub partitions: HashMap<i32, Partition>,
 }
 
-#[doc(hidden)]
-#[derive(Copy, Clone)]
-pub struct ConsumerGroupView<'a> {
-    raw: &'a rdsys::rd_kafka_cgrp_stats_t,
+/// Per-partition statistics.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct Partition {
+    /// The partition ID.
+    pub partition: i32,
+    /// The ID of the broker from which messages are currently being fetched.
+    pub broker: i32,
+    /// The broker ID of the leader.
+    pub leader: i32,
+    /// Whether the partition is explicitly desired by the application.
+    pub desired: bool,
+    /// Whether the partition is not seen in the topic metadata from the broker.
+    pub unknown: bool,
+    /// The number of messages waiting to be produced in the first-level queue.
+    pub msgq_cnt: i64,
+    /// The number of bytes waiting to be produced in the first-level queue.
+    pub msgq_bytes: u64,
+    /// The number of messages ready to be produced in the transmit queue.
+    pub xmit_msgq_cnt: i64,
+    /// The number of bytes ready to be produced in the transmit queue.
+    pub xmit_msgq_bytes: u64,
+    /// The number of prefetched messages in the fetch queue.
+    pub fetchq_cnt: i64,
+    /// The number of bytes in the fetch queue.
+    pub fetchq_size: u64,
+    /// The consumer fetch state for this partition (none, stopping, stopped,
+    /// offset-query, offset-wait, active).
+    pub fetch_state: String,
+    /// The current/last logical offset query.
+    pub query_offset: i64,
+    /// The next offset to fetch.
+    pub next_offset: i64,
+    /// The offset of the last message passed to the application, plus one.
+    pub app_offset: i64,
+    /// The offset to be committed.
+    pub stored_offset: i64,
+    /// The last committed offset.
+    pub committed_offset: i64,
+    /// The last offset for which partition EOF was signaled.
+    pub eof_offset: i64,
+    /// The low watermark offset on the broker.
+    pub lo_offset: i64,
+    /// The high watermark offset on the broker.
+    pub hi_offset: i64,
+    /// The last stable offset on the broker.
+    pub ls_offset: i64,
+    /// The difference between `hi_offset` and `committed_offset`.
+    pub consumer_lag: i64,
+    /// The difference between `hi_offset` and `stored_offset`.
+    pub consumer_lag_stored: i64,
+    /// The total number of messages transmitted (produced).
+    pub txmsgs: u64,
+    /// The total number of bytes transmitted (produced).
+    pub txbytes: u64,
+    /// The total number of messages consumed, not included ignored messages.
+    pub rxmsgs: u64,
+    /// The total bytes consumed.
+    pub rxbytes: u64,
+    /// The total number of messages received, for consumers, or the total
+    /// number of messages produced, for producers.
+    pub msgs: u64,
+    /// The number of dropped outdated messages.
+    pub rx_ver_drops: u64,
+    /// The current number of messages in flight to or from the broker.
+    pub msgs_inflight: i64,
+    /// The next expected acked sequence number, for idempotent producers.
+    pub next_ack_seq: i64,
+    /// The next expected errored sequence number, for idempotent producers.
+    pub next_err_seq: i64,
+    /// The last acked internal message ID, for idempotent producers.
+    pub acked_msgid: u64,
 }
 
-#[doc(hidden)]
-#[derive(Copy, Clone)]
-pub struct ExactlyOnceSemanticsView<'a> {
-    raw: &'a rdsys::rd_kafka_eos_stats_t,
+/// Consumer group manager statistics.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct ConsumerGroup {
+    /// The local consumer group handler's state.
+    pub state: String,
+    /// The time elapsed since the last state change, in milliseconds.
+    pub stateage: i64,
+    /// The local consumer group hander's join state.
+    pub join_state: String,
+    /// The time elapsed since the last rebalance (assign or revoke), in
+    /// milliseconds.
+    pub rebalance_age: i64,
+    /// The total number of rebalances (assign or revoke).
+    pub rebalance_cnt: i64,
+    /// The reason for the last rebalance.
+    ///
+    /// This string will be empty if no rebalances have occurred.
+    pub rebalance_reason: String,
+    /// The partition count for the current assignment.
+    pub assignment_size: i32,
 }
 
-#[doc(hidden)]
-#[derive(Copy, Clone)]
-pub struct WindowView<'a> {
-    raw: &'a rdsys::rd_kafka_avg_stats_t,
-}
-
-#[doc(hidden)]
-#[derive(Copy, Clone)]
-pub struct BrokerRequestView<'a> {
-    raw: &'a rdsys::rd_kafka_req_count_t,
-}
-
-#[doc(hidden)]
-impl<'a> StatsView<'a> {
-    /// Safety: `raw` and all nested pointers must remain valid for `'a`.
-    pub unsafe fn new(raw: &'a rdsys::rd_kafka_stats_t) -> Self {
-        Self {
-            raw,
-            brokers: slice_from_ptr_count(raw.brokers, raw.broker_cnt as usize),
-            topics: slice_from_ptr_count(raw.topics, raw.topic_cnt as usize),
-        }
-    }
-
-    pub fn brokers(&self) -> impl ExactSizeIterator<Item = BrokerView<'a>> + 'a {
-        self.brokers.iter().map(BrokerView::from_raw)
-    }
-
-    pub fn topics(&self) -> impl ExactSizeIterator<Item = TopicView<'a>> + 'a {
-        self.topics.iter().map(TopicView::from_raw)
-    }
-
-    pub fn cgrp(&self) -> Option<ConsumerGroupView<'a>> {
-        (self.raw.has_cgrp != 0).then_some(ConsumerGroupView {
-            raw: &self.raw.cgrp,
-        })
-    }
-
-    pub fn eos(&self) -> Option<ExactlyOnceSemanticsView<'a>> {
-        (self.raw.has_eos != 0).then_some(ExactlyOnceSemanticsView { raw: &self.raw.eos })
-    }
-}
-
-#[doc(hidden)]
-impl<'a> BrokerView<'a> {
-    fn from_raw(raw: &'a rdsys::rd_kafka_broker_stats_t) -> Self {
-        let reqs = unsafe { slice_from_ptr_count(raw.reqs, raw.req_cnt as usize) };
-        Self { raw, reqs }
-    }
-
-    pub fn requests(&self) -> impl Iterator<Item = BrokerRequestView<'a>> + 'a {
-        self.reqs
-            .iter()
-            .filter(|req| req.count > 0)
-            .map(|raw| BrokerRequestView { raw })
-    }
-}
-
-#[doc(hidden)]
-impl<'a> TopicView<'a> {
-    fn from_raw(raw: &'a rdsys::rd_kafka_topic_stats_t) -> Self {
-        let partitions =
-            unsafe { slice_from_ptr_count(raw.partitions, raw.partition_cnt as usize) };
-        Self { raw, partitions }
-    }
-
-    pub fn partitions(&self) -> impl ExactSizeIterator<Item = PartitionView<'a>> + 'a {
-        self.partitions.iter().map(PartitionView::from_raw)
-    }
-}
-
-#[doc(hidden)]
-impl<'a> PartitionView<'a> {
-    fn from_raw(raw: &'a rdsys::rd_kafka_partition_stats_t) -> Self {
-        Self { raw }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum BrokerState {
-    Init,
-    Down,
-    Connect,
-    Auth,
-    ApiVersionQuery,
-    AuthHandshake,
-    Up,
-    Update,
-    Unknown(i32),
-}
-
-#[doc(hidden)]
-impl BrokerState {
-    #[inline]
-    pub fn from_raw(v: i32) -> Self {
-        match v {
-            0 => Self::Init,
-            1 => Self::Down,
-            2 => Self::Connect,
-            3 => Self::Auth,
-            4 => Self::ApiVersionQuery,
-            5 => Self::AuthHandshake,
-            6 => Self::Up,
-            7 => Self::Update,
-            other => Self::Unknown(other),
-        }
-    }
-
-    #[inline]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Init => "INIT",
-            Self::Down => "DOWN",
-            Self::Connect => "CONNECT",
-            Self::Auth => "AUTH",
-            Self::ApiVersionQuery => "APIVERSION_QUERY",
-            Self::AuthHandshake => "AUTH_HANDSHAKE",
-            Self::Up => "UP",
-            Self::Update => "UPDATE",
-            Self::Unknown(_) => "UNKNOWN",
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum ClientType {
-    Producer,
-    Consumer,
-    Unknown(i32),
-}
-
-#[doc(hidden)]
-impl ClientType {
-    #[inline]
-    pub fn from_raw(v: i32) -> Self {
-        match v {
-            0 => Self::Producer,
-            1 => Self::Consumer,
-            o => Self::Unknown(o),
-        }
-    }
-
-    #[inline]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Producer => "producer",
-            Self::Consumer => "consumer",
-            Self::Unknown(_) => "unknown",
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum FetchState {
-    None,
-    Stopping,
-    Stopped,
-    OffsetQuery,
-    OffsetWait,
-    ValidateEpochWait,
-    Active,
-    Unknown(i32),
-}
-
-#[doc(hidden)]
-impl FetchState {
-    #[inline]
-    pub fn from_raw(v: i32) -> Self {
-        match v {
-            0 => Self::None,
-            1 => Self::Stopping,
-            2 => Self::Stopped,
-            3 => Self::OffsetQuery,
-            4 => Self::OffsetWait,
-            5 => Self::ValidateEpochWait,
-            6 => Self::Active,
-            other => Self::Unknown(other),
-        }
-    }
-
-    #[inline]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Stopping => "stopping",
-            Self::Stopped => "stopped",
-            Self::OffsetQuery => "offset-query",
-            Self::OffsetWait => "offset-wait",
-            Self::ValidateEpochWait => "validate-epoch-wait",
-            Self::Active => "active",
-            Self::Unknown(_) => "unknown",
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum ConsumerGroupState {
-    Init,
-    Term,
-    QueryCoord,
-    WaitCoord,
-    WaitBroker,
-    WaitBrokerTransport,
-    Up,
-    Unknown(i32),
-}
-
-#[doc(hidden)]
-impl ConsumerGroupState {
-    #[inline]
-    pub fn from_raw(v: i32) -> Self {
-        match v {
-            0 => Self::Init,
-            1 => Self::Term,
-            2 => Self::QueryCoord,
-            3 => Self::WaitCoord,
-            4 => Self::WaitBroker,
-            5 => Self::WaitBrokerTransport,
-            6 => Self::Up,
-            other => Self::Unknown(other),
-        }
-    }
-
-    #[inline]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Init => "init",
-            Self::Term => "term",
-            Self::QueryCoord => "query-coord",
-            Self::WaitCoord => "wait-coord",
-            Self::WaitBroker => "wait-broker",
-            Self::WaitBrokerTransport => "wait-broker-transport",
-            Self::Up => "up",
-            Self::Unknown(_) => "unknown",
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum ConsumerGroupJoinState {
-    Init,
-    WaitJoin,
-    WaitMetadata,
-    WaitSync,
-    WaitUnassign,
-    WaitUnassignCall,
-    WaitAssignCall,
-    WaitRebalanceCb,
-    WaitChange,
-    Steady,
-    Unknown(i32),
-}
-
-#[doc(hidden)]
-impl ConsumerGroupJoinState {
-    #[inline]
-    pub fn from_raw(v: i32) -> Self {
-        match v {
-            0 => Self::Init,
-            1 => Self::WaitJoin,
-            2 => Self::WaitMetadata,
-            3 => Self::WaitSync,
-            4 => Self::WaitUnassign,
-            5 => Self::WaitUnassignCall,
-            6 => Self::WaitAssignCall,
-            7 => Self::WaitRebalanceCb,
-            8 => Self::WaitChange,
-            9 => Self::Steady,
-            other => Self::Unknown(other),
-        }
-    }
-
-    #[inline]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Init => "init",
-            Self::WaitJoin => "wait-join",
-            Self::WaitMetadata => "wait-metadata",
-            Self::WaitSync => "wait-sync",
-            Self::WaitUnassign => "wait-unassign",
-            Self::WaitUnassignCall => "wait-unassign-call",
-            Self::WaitAssignCall => "wait-assign-call",
-            Self::WaitRebalanceCb => "wait-rebalance-cb",
-            Self::WaitChange => "wait-change",
-            Self::Steady => "steady",
-            Self::Unknown(_) => "unknown",
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum IdempotentState {
-    Init,
-    WaitTransport,
-    WaitPid,
-    Assigned,
-    DrainReset,
-    DrainBump,
-    WaitPidRotate,
-    Term,
-    Unknown(i32),
-}
-
-#[doc(hidden)]
-impl IdempotentState {
-    #[inline]
-    pub fn from_raw(v: i32) -> Self {
-        match v {
-            0 => Self::Init,
-            1 => Self::WaitTransport,
-            2 => Self::WaitPid,
-            3 => Self::Assigned,
-            4 => Self::DrainReset,
-            5 => Self::DrainBump,
-            6 => Self::WaitPidRotate,
-            7 => Self::Term,
-            other => Self::Unknown(other),
-        }
-    }
-
-    #[inline]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Init => "Init",
-            Self::WaitTransport => "WaitTransport",
-            Self::WaitPid => "WaitPID",
-            Self::Assigned => "Assigned",
-            Self::DrainReset => "DrainReset",
-            Self::DrainBump => "DrainBump",
-            Self::WaitPidRotate => "WaitPIDRotate",
-            Self::Term => "Term",
-            Self::Unknown(_) => "Unknown",
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum TransactionState {
-    Init,
-    WaitPid,
-    Ready,
-    InTransaction,
-    BeginCommit,
-    CommittingTransaction,
-    BeginAbort,
-    AbortingTransaction,
-    Unknown(i32),
-}
-
-#[doc(hidden)]
-impl TransactionState {
-    #[inline]
-    pub fn from_raw(v: i32) -> Self {
-        match v {
-            0 => Self::Init,
-            1 => Self::WaitPid,
-            2 => Self::Ready,
-            3 => Self::InTransaction,
-            4 => Self::BeginCommit,
-            5 => Self::CommittingTransaction,
-            6 => Self::BeginAbort,
-            7 => Self::AbortingTransaction,
-            other => Self::Unknown(other),
-        }
-    }
-
-    #[inline]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Init => "Init",
-            Self::WaitPid => "WaitPID",
-            Self::Ready => "Ready",
-            Self::InTransaction => "InTransaction",
-            Self::BeginCommit => "BeginCommit",
-            Self::CommittingTransaction => "CommittingTransaction",
-            Self::BeginAbort => "BeginAbort",
-            Self::AbortingTransaction => "AbortingTransaction",
-            Self::Unknown(_) => "Unknown",
-        }
-    }
-}
-
-#[doc(hidden)]
-impl<'a> StatsView<'a> {
-    pub fn name(&self) -> Cow<'a, str> {
-        c_char_array_to_cow(&self.raw.name)
-    }
-    pub fn client_id(&self) -> Cow<'a, str> {
-        c_char_array_to_cow(&self.raw.client_id)
-    }
-    pub fn client_type(&self) -> ClientType {
-        ClientType::from_raw(self.raw.type_)
-    }
-
-    pub fn msg_cnt(&self) -> u64 {
-        self.raw.msg_cnt as u64
-    }
-    pub fn msg_size(&self) -> u64 {
-        self.raw.msg_size
-    }
-    pub fn msg_max(&self) -> u64 {
-        self.raw.msg_max as u64
-    }
-    pub fn msg_size_max(&self) -> u64 {
-        self.raw.msg_size_max
-    }
-    pub fn txmsgs(&self) -> i64 {
-        self.raw.txmsgs
-    }
-}
-
-#[doc(hidden)]
-impl<'a> BrokerView<'a> {
-    pub fn name(&self) -> Cow<'a, str> {
-        c_char_array_to_cow(&self.raw.name)
-    }
-    pub fn nodeid(&self) -> i32 {
-        self.raw.nodeid
-    }
-    pub fn nodename(&self) -> Cow<'a, str> {
-        c_char_array_to_cow(&self.raw.nodename)
-    }
-    pub fn source(&self) -> Cow<'a, str> {
-        c_char_array_to_cow(&self.raw.source)
-    }
-
-    pub fn state(&self) -> BrokerState {
-        BrokerState::from_raw(self.raw.state)
-    }
-    pub fn stateage(&self) -> i64 {
-        self.raw.stateage_us
-    }
-
-    pub fn waitresp_cnt(&self) -> i64 {
-        self.raw.waitresp_cnt as i64
-    }
-    pub fn req_timeouts(&self) -> u64 {
-        self.raw.req_timeouts as u64
-    }
-    pub fn txretries(&self) -> u64 {
-        self.raw.tx_retries as u64
-    }
-    pub fn txerrs(&self) -> u64 {
-        self.raw.tx_errs as u64
-    }
-    pub fn connects(&self) -> Option<i64> {
-        Some(self.raw.connects)
-    }
-    pub fn disconnects(&self) -> Option<i64> {
-        Some(self.raw.disconnects)
-    }
-    pub fn rx(&self) -> u64 {
-        self.raw.rx as u64
-    }
-    pub fn tx(&self) -> u64 {
-        self.raw.tx as u64
-    }
-    pub fn txidle(&self) -> i64 {
-        self.raw.tx_idle_us
-    }
-    pub fn rxidle(&self) -> i64 {
-        self.raw.rx_idle_us
-    }
-    pub fn wakeups(&self) -> Option<u64> {
-        Some(self.raw.wakeups as u64)
-    }
-    pub fn outbuf_cnt(&self) -> i64 {
-        self.raw.outbuf_cnt as i64
-    }
-
-    pub fn int_latency(&self) -> Option<WindowView<'a>> {
-        Some(WindowView {
-            raw: &self.raw.int_latency,
-        })
-    }
-
-    pub fn outbuf_latency(&self) -> Option<WindowView<'a>> {
-        Some(WindowView {
-            raw: &self.raw.outbuf_latency,
-        })
-    }
-
-    pub fn rtt(&self) -> Option<WindowView<'a>> {
-        Some(WindowView { raw: &self.raw.rtt })
-    }
-
-    pub fn produce_reqsize(&self) -> Option<WindowView<'a>> {
-        Some(WindowView {
-            raw: &self.raw.produce_reqsize,
-        })
-    }
-
-    pub fn produce_partitions(&self) -> Option<WindowView<'a>> {
-        Some(WindowView {
-            raw: &self.raw.produce_partitions,
-        })
-    }
-
-    pub fn produce_messages(&self) -> Option<WindowView<'a>> {
-        Some(WindowView {
-            raw: &self.raw.produce_messages,
-        })
-    }
-
-    pub fn produce_fill(&self) -> Option<WindowView<'a>> {
-        Some(WindowView {
-            raw: &self.raw.produce_fill,
-        })
-    }
-
-    pub fn batch_wait(&self) -> Option<WindowView<'a>> {
-        Some(WindowView {
-            raw: &self.raw.batch_wait,
-        })
-    }
-}
-
-#[doc(hidden)]
-impl<'a> TopicView<'a> {
-    pub fn name(&self) -> Cow<'a, str> {
-        c_char_array_to_cow(&self.raw.name)
-    }
-    pub fn metadata_age(&self) -> i64 {
-        self.raw.metadata_age_us / 1000
-    }
-    pub fn batchsize(&self) -> WindowView<'a> {
-        WindowView {
-            raw: &self.raw.batchsize,
-        }
-    }
-    pub fn batchcnt(&self) -> WindowView<'a> {
-        WindowView {
-            raw: &self.raw.batchcnt,
-        }
-    }
-}
-
-#[doc(hidden)]
-impl<'a> PartitionView<'a> {
-    pub fn partition(&self) -> i32 {
-        self.raw.partition
-    }
-    pub fn broker(&self) -> i32 {
-        self.raw.broker_id
-    }
-    pub fn leader(&self) -> i32 {
-        self.raw.leader
-    }
-
-    pub fn msgq_cnt(&self) -> i64 {
-        self.raw.msgq_cnt as i64
-    }
-    pub fn msgq_bytes(&self) -> u64 {
-        self.raw.msgq_bytes as u64
-    }
-    pub fn xmit_msgq_cnt(&self) -> i64 {
-        self.raw.xmit_msgq_cnt as i64
-    }
-    pub fn xmit_msgq_bytes(&self) -> u64 {
-        self.raw.xmit_msgq_bytes as u64
-    }
-    pub fn fetchq_cnt(&self) -> i64 {
-        self.raw.fetchq_cnt as i64
-    }
-    pub fn fetchq_size(&self) -> u64 {
-        self.raw.fetchq_size as u64
-    }
-
-    pub fn fetch_state(&self) -> FetchState {
-        FetchState::from_raw(self.raw.fetch_state)
-    }
-
-    pub fn app_offset(&self) -> i64 {
-        self.raw.app_offset
-    }
-    pub fn stored_offset(&self) -> i64 {
-        self.raw.stored_offset
-    }
-    pub fn committed_offset(&self) -> i64 {
-        self.raw.committed_offset
-    }
-    pub fn lo_offset(&self) -> i64 {
-        self.raw.lo_offset
-    }
-    pub fn hi_offset(&self) -> i64 {
-        self.raw.hi_offset
-    }
-    pub fn ls_offset(&self) -> i64 {
-        self.raw.ls_offset
-    }
-
-    pub fn consumer_lag(&self) -> i64 {
-        self.raw.consumer_lag
-    }
-    pub fn consumer_lag_stored(&self) -> i64 {
-        self.raw.consumer_lag_stored
-    }
-
-    pub fn txmsgs(&self) -> u64 {
-        self.raw.txmsgs as u64
-    }
-    pub fn txbytes(&self) -> u64 {
-        self.raw.txbytes as u64
-    }
-    pub fn rxmsgs(&self) -> u64 {
-        self.raw.rxmsgs as u64
-    }
-    pub fn rxbytes(&self) -> u64 {
-        self.raw.rxbytes as u64
-    }
-    pub fn msgs(&self) -> u64 {
-        self.raw.msgs as u64
-    }
-}
-
-#[doc(hidden)]
-impl<'a> ConsumerGroupView<'a> {
-    pub fn state(&self) -> ConsumerGroupState {
-        ConsumerGroupState::from_raw(self.raw.state)
-    }
-
-    pub fn stateage(&self) -> i64 {
-        self.raw.stateage_us / 1000
-    }
-
-    pub fn join_state(&self) -> ConsumerGroupJoinState {
-        ConsumerGroupJoinState::from_raw(self.raw.join_state)
-    }
-
-    pub fn rebalance_age(&self) -> i64 {
-        self.raw.rebalance_age_us / 1000
-    }
-    pub fn rebalance_cnt(&self) -> i64 {
-        self.raw.rebalance_cnt as i64
-    }
-    pub fn rebalance_reason(&self) -> Cow<'a, str> {
-        c_char_array_to_cow(&self.raw.rebalance_reason)
-    }
-    pub fn assignment_size(&self) -> i32 {
-        self.raw.assignment_size
-    }
-}
-
-#[doc(hidden)]
-impl<'a> ExactlyOnceSemanticsView<'a> {
-    pub fn idemp_state(&self) -> IdempotentState {
-        IdempotentState::from_raw(self.raw.idemp_state)
-    }
-
-    pub fn idemp_stateage(&self) -> i64 {
-        self.raw.idemp_stateage_us / 1000
-    }
-
-    pub fn txn_state(&self) -> TransactionState {
-        TransactionState::from_raw(self.raw.txn_state)
-    }
-
-    pub fn txn_stateage(&self) -> i64 {
-        self.raw.txn_stateage_us / 1000
-    }
-    pub fn txn_may_enq(&self) -> bool {
-        self.raw.txn_may_enq != 0
-    }
-    pub fn producer_id(&self) -> i64 {
-        self.raw.producer_id
-    }
-    pub fn producer_epoch(&self) -> i64 {
-        self.raw.producer_epoch as i64
-    }
-    pub fn epoch_cnt(&self) -> i64 {
-        self.raw.epoch_cnt as i64
-    }
-}
-
-#[doc(hidden)]
-impl<'a> WindowView<'a> {
-    pub fn min(&self) -> i64 {
-        self.raw.min
-    }
-    pub fn max(&self) -> i64 {
-        self.raw.max
-    }
-    pub fn avg(&self) -> i64 {
-        self.raw.avg
-    }
-    pub fn sum(&self) -> i64 {
-        self.raw.sum
-    }
-    pub fn cnt(&self) -> i64 {
-        self.raw.cnt
-    }
-    pub fn stddev(&self) -> i64 {
-        self.raw.stddev
-    }
-    pub fn hdrsize(&self) -> i64 {
-        self.raw.hdrsize as i64
-    }
-    pub fn p50(&self) -> i64 {
-        self.raw.p50
-    }
-    pub fn p75(&self) -> i64 {
-        self.raw.p75
-    }
-    pub fn p90(&self) -> i64 {
-        self.raw.p90
-    }
-    pub fn p95(&self) -> i64 {
-        self.raw.p95
-    }
-    pub fn p99(&self) -> i64 {
-        self.raw.p99
-    }
-    pub fn p99_99(&self) -> i64 {
-        self.raw.p99_99
-    }
-    pub fn outofrange(&self) -> i64 {
-        self.raw.oor
-    }
-}
-
-#[doc(hidden)]
-impl<'a> BrokerRequestView<'a> {
-    pub fn name(&self) -> Cow<'a, str> {
-        c_char_array_to_cow(&self.raw.name)
-    }
-    pub fn count(&self) -> i64 {
-        self.raw.count
-    }
+/// Exactly-once semantics statistics.
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct ExactlyOnceSemantics {
+    /// The current idempotent producer state.
+    pub idemp_state: String,
+    /// THe time elapsed since the last idempotent producer state change, in
+    /// milliseconds.
+    pub idemp_stateage: i64,
+    /// The current transactional producer state.
+    pub txn_state: String,
+    /// The time elapsed since the last transactional producer state change, in
+    /// milliseconds.
+    pub txn_stateage: i64,
+    /// Whether the transactional state allows enqueing (producing) new
+    /// messages.
+    pub txn_may_enq: bool,
+    /// The currently assigned producer ID, or -1.
+    pub producer_id: i64,
+    /// The current epoch, or -1.
+    pub producer_epoch: i64,
+    /// The number of producer ID assignments.
+    pub epoch_cnt: i64,
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
+    use maplit::hashmap;
     use super::*;
 
-    struct RawStatsFixture {
-        stats: rdsys::rd_kafka_stats_t,
-        brokers: Vec<rdsys::rd_kafka_broker_stats_t>,
-        topics: Vec<rdsys::rd_kafka_topic_stats_t>,
-        partitions: Vec<rdsys::rd_kafka_partition_stats_t>,
-        reqs: Vec<rdsys::rd_kafka_req_count_t>,
-    }
+    #[test]
+    fn test_statistics() {
+        let stats: Statistics = serde_json::from_str(EXAMPLE).unwrap();
 
-    impl RawStatsFixture {
-        fn populated() -> Self {
-            let mut reqs = vec![
-                unsafe { std::mem::zeroed::<rdsys::rd_kafka_req_count_t>() },
-                unsafe { std::mem::zeroed::<rdsys::rd_kafka_req_count_t>() },
-            ];
-            write_cstr(&mut reqs[0].name, "Produce");
-            reqs[0].count = 12;
-            write_cstr(&mut reqs[1].name, "Metadata");
-            reqs[1].count = 0;
+        assert_eq!(stats.name, "rdkafka#producer-1");
+        assert_eq!(stats.client_type, "producer");
+        assert_eq!(stats.ts, 1163982743268);
+        assert_eq!(stats.time, 1589652530);
+        assert_eq!(stats.replyq, 0);
+        assert_eq!(stats.msg_cnt, 320);
+        assert_eq!(stats.msg_size, 9920);
+        assert_eq!(stats.msg_max, 500000);
+        assert_eq!(stats.msg_size_max, 1073741824);
+        assert_eq!(stats.simple_cnt, 0);
 
-            let mut partitions =
-                vec![unsafe { std::mem::zeroed::<rdsys::rd_kafka_partition_stats_t>() }];
-            let partition = &mut partitions[0];
-            partition.partition = 7;
-            partition.broker_id = 9;
-            partition.leader = 11;
-            partition.msgq_cnt = 1;
-            partition.msgq_bytes = 2;
-            partition.xmit_msgq_cnt = 3;
-            partition.xmit_msgq_bytes = 4;
-            partition.fetchq_cnt = 5;
-            partition.fetchq_size = 6;
-            partition.fetch_state = 5;
-            partition.app_offset = 17;
-            partition.stored_offset = 18;
-            partition.committed_offset = 19;
-            partition.lo_offset = 20;
-            partition.hi_offset = 21;
-            partition.ls_offset = 22;
-            partition.consumer_lag = 23;
-            partition.consumer_lag_stored = 24;
-            partition.txmsgs = 25;
-            partition.txbytes = 26;
-            partition.rxmsgs = 27;
-            partition.rxbytes = 28;
-            partition.msgs = 29;
+        assert_eq!(stats.brokers.len(), 1);
 
-            let mut brokers = vec![unsafe { std::mem::zeroed::<rdsys::rd_kafka_broker_stats_t>() }];
-            let broker = &mut brokers[0];
-            write_cstr(&mut broker.name, "broker-1");
-            broker.nodeid = 9;
-            write_cstr(&mut broker.nodename, "localhost:9092");
-            write_cstr(&mut broker.source, "configured");
-            broker.state = 6;
-            broker.stateage_us = 1_234;
-            broker.waitresp_cnt = 3;
-            broker.req_timeouts = 4;
-            broker.tx_retries = 5;
-            broker.tx_errs = 6;
-            broker.connects = 7;
-            broker.disconnects = 8;
-            broker.rx = 9;
-            broker.tx = 10;
-            broker.tx_idle_us = 11;
-            broker.rx_idle_us = 12;
-            broker.wakeups = 13;
-            broker.outbuf_cnt = 14;
-            broker.int_latency = make_window(100);
-            broker.outbuf_latency = make_window(200);
-            broker.rtt = make_window(300);
-            broker.produce_reqsize = make_window(400);
-            broker.produce_partitions = make_window(500);
-            broker.produce_messages = make_window(600);
-            broker.produce_fill = make_window(700);
-            broker.batch_wait = make_window(750);
-            broker.req_cnt = reqs.len() as u32;
-            broker.reqs = reqs.as_mut_ptr();
+        let broker = stats.brokers.values().collect::<Vec<_>>()[0];
 
-            let mut topics = vec![unsafe { std::mem::zeroed::<rdsys::rd_kafka_topic_stats_t>() }];
-            let topic = &mut topics[0];
-            write_cstr(&mut topic.name, "topic-1");
-            topic.metadata_age_us = 42_000;
-            topic.batchsize = make_window(800);
-            topic.batchcnt = make_window(900);
-            topic.partition_cnt = partitions.len() as u32;
-            topic.partitions = partitions.as_mut_ptr();
-
-            let mut stats = unsafe { std::mem::zeroed::<rdsys::rd_kafka_stats_t>() };
-            write_cstr(&mut stats.name, "handle-1");
-            write_cstr(&mut stats.client_id, "client-1");
-            stats.type_ = 0;
-            stats.msg_cnt = 21;
-            stats.msg_size = 22;
-            stats.msg_max = 23;
-            stats.msg_size_max = 24;
-            stats.txmsgs = 25;
-            stats.broker_cnt = brokers.len() as u32;
-            stats.brokers = brokers.as_mut_ptr();
-            stats.topic_cnt = topics.len() as u32;
-            stats.topics = topics.as_mut_ptr();
-            stats.has_cgrp = 1;
-            stats.cgrp.state = 6;
-            stats.cgrp.stateage_us = 31_000;
-            stats.cgrp.join_state = 9;
-            stats.cgrp.rebalance_age_us = 32_000;
-            stats.cgrp.rebalance_cnt = 33;
-            write_cstr(&mut stats.cgrp.rebalance_reason, "assign");
-            stats.cgrp.assignment_size = 34;
-            stats.has_eos = 1;
-            stats.eos.idemp_state = 3;
-            stats.eos.idemp_stateage_us = 41_000;
-            stats.eos.txn_state = 5;
-            stats.eos.txn_stateage_us = 42_000;
-            stats.eos.txn_may_enq = 1;
-            stats.eos.producer_id = 43;
-            stats.eos.producer_epoch = 44;
-            stats.eos.epoch_cnt = 45;
-
-            Self {
-                stats,
-                brokers,
-                topics,
-                partitions,
-                reqs,
+        assert_eq!(
+            broker.req,
+            hashmap! {
+                "Produce".to_string() => 31307,
+                "Offset".to_string() => 0,
+                "Metadata".to_string() => 2,
+                "FindCoordinator".to_string() => 0,
+                "SaslHandshake".to_string() => 0,
+                "ApiVersion".to_string() => 2,
+                "InitProducerId".to_string() => 0,
+                "AddPartitionsToTxn".to_string() => 0,
+                "AddOffsetsToTxn".to_string() => 0,
+                "EndTxn".to_string() => 0,
+                "TxnOffsetCommit".to_string() => 0,
+                "SaslAuthenticate".to_string() => 0,
             }
-        }
+        );
 
-        fn backing_len(&self) -> usize {
-            self.brokers.len() + self.topics.len() + self.partitions.len() + self.reqs.len()
-        }
+        assert_eq!(stats.topics.len(), 1);
     }
 
-    fn write_cstr<const N: usize>(dst: &mut [c_char; N], value: &str) {
-        assert!(value.len() < N);
-        for (slot, byte) in dst.iter_mut().zip(value.bytes()) {
-            *slot = byte as c_char;
-        }
-    }
+    // Example from https://github.com/edenhill/librdkafka/wiki/Statistics
+    const EXAMPLE: &str = r#"
+      {
+        "name": "rdkafka#producer-1",
+        "client_id": "rdkafka",
+        "type": "producer",
+        "ts": 1163982743268,
+        "time": 1589652530,
+        "age": 5,
+        "replyq": 0,
+        "msg_cnt": 320,
+        "msg_size": 9920,
+        "msg_max": 500000,
+        "msg_size_max": 1073741824,
+        "simple_cnt": 0,
+        "metadata_cache_cnt": 1,
+        "brokers": {
+          "localhost:9092/0": {
+            "name": "localhost:9092/0",
+            "nodeid": 0,
+            "nodename": "localhost:9092",
+            "source": "configured",
+            "state": "UP",
+            "stateage": 8005652,
+            "outbuf_cnt": 0,
+            "outbuf_msg_cnt": 0,
+            "waitresp_cnt": 1,
+            "waitresp_msg_cnt": 126,
+            "tx": 31311,
+            "txbytes": 463869957,
+            "txerrs": 0,
+            "txretries": 0,
+            "txidle": 5,
+            "req_timeouts": 0,
+            "rx": 31310,
+            "rxbytes": 1753668,
+            "rxerrs": 0,
+            "rxcorriderrs": 0,
+            "rxpartial": 0,
+            "rxidle": 5,
+            "zbuf_grow": 0,
+            "buf_grow": 0,
+            "wakeups": 131568,
+            "connects": 1,
+            "disconnects": 0,
+            "int_latency": {
+              "min": 2,
+              "max": 9193,
+              "avg": 605,
+              "sum": 874202325,
+              "stddev": 1080,
+              "p50": 319,
+              "p75": 481,
+              "p90": 1135,
+              "p95": 3023,
+              "p99": 5919,
+              "p99_99": 9087,
+              "outofrange": 0,
+              "hdrsize": 15472,
+              "cnt": 1443154
+            },
+            "outbuf_latency": {
+              "min": 1,
+              "max": 308,
+              "avg": 22,
+              "sum": 107311,
+              "stddev": 21,
+              "p50": 22,
+              "p75": 29,
+              "p90": 36,
+              "p95": 44,
+              "p99": 111,
+              "p99_99": 309,
+              "outofrange": 0,
+              "hdrsize": 11376,
+              "cnt": 4740
+            },
+            "rtt": {
+              "min": 94,
+              "max": 3279,
+              "avg": 237,
+              "sum": 1124867,
+              "stddev": 198,
+              "p50": 193,
+              "p75": 245,
+              "p90": 329,
+              "p95": 393,
+              "p99": 1183,
+              "p99_99": 3279,
+              "outofrange": 0,
+              "hdrsize": 13424,
+              "cnt": 4739
+            },
+            "throttle": {
+              "min": 0,
+              "max": 0,
+              "avg": 0,
+              "sum": 0,
+              "stddev": 0,
+              "p50": 0,
+              "p75": 0,
+              "p90": 0,
+              "p95": 0,
+              "p99": 0,
+              "p99_99": 0,
+              "outofrange": 0,
+              "hdrsize": 17520,
+              "cnt": 4739
+            },
+            "req": {
+              "Produce": 31307,
+              "Offset": 0,
+              "Metadata": 2,
+              "FindCoordinator": 0,
+              "SaslHandshake": 0,
+              "ApiVersion": 2,
+              "InitProducerId": 0,
+              "AddPartitionsToTxn": 0,
+              "AddOffsetsToTxn": 0,
+              "EndTxn": 0,
+              "TxnOffsetCommit": 0,
+              "SaslAuthenticate": 0
+            },
+            "toppars": {
+              "test-0": {
+                "topic": "test",
+                "partition": 0
+              },
+              "test-1": {
+                "topic": "test",
+                "partition": 1
+              },
+              "test-2": {
+                "topic": "test",
+                "partition": 2
+              }
+            }
+          }
+        },
+        "topics": {
+          "test": {
+            "topic": "test",
+            "metadata_age": 7014,
+            "batchsize": {
+              "min": 99,
+              "max": 240276,
+              "avg": 11871,
+              "sum": 56260370,
+              "stddev": 13137,
+              "p50": 10431,
+              "p75": 11583,
+              "p90": 12799,
+              "p95": 13823,
+              "p99": 72191,
+              "p99_99": 240639,
+              "outofrange": 0,
+              "hdrsize": 14448,
+              "cnt": 4739
+            },
+            "batchcnt": {
+              "min": 1,
+              "max": 6161,
+              "avg": 304,
+              "sum": 1442353,
+              "stddev": 336,
+              "p50": 267,
+              "p75": 297,
+              "p90": 329,
+              "p95": 353,
+              "p99": 1847,
+              "p99_99": 6175,
+              "outofrange": 0,
+              "hdrsize": 8304,
+              "cnt": 4739
+            },
+            "partitions": {
+              "0": {
+                "partition": 0,
+                "broker": 0,
+                "leader": 0,
+                "desired": false,
+                "unknown": false,
+                "msgq_cnt": 845,
+                "msgq_bytes": 26195,
+                "xmit_msgq_cnt": 0,
+                "xmit_msgq_bytes": 0,
+                "fetchq_cnt": 0,
+                "fetchq_size": 0,
+                "fetch_state": "none",
+                "query_offset": -1001,
+                "next_offset": 0,
+                "app_offset": -1001,
+                "stored_offset": -1001,
+                "commited_offset": -1001,
+                "committed_offset": -1001,
+                "eof_offset": -1001,
+                "lo_offset": -1001,
+                "hi_offset": -1001,
+                "ls_offset": -1001,
+                "consumer_lag": -1,
+                "consumer_lag_stored": 0,
+                "txmsgs": 3950967,
+                "txbytes": 122479977,
+                "rxmsgs": 0,
+                "rxbytes": 0,
+                "msgs": 3951812,
+                "rx_ver_drops": 0,
+                "msgs_inflight": 1067,
+                "next_ack_seq": 0,
+                "next_err_seq": 0,
+                "acked_msgid": 0
+              },
+              "1": {
+                "partition": 1,
+                "broker": 0,
+                "leader": 0,
+                "desired": false,
+                "unknown": false,
+                "msgq_cnt": 229,
+                "msgq_bytes": 7099,
+                "xmit_msgq_cnt": 0,
+                "xmit_msgq_bytes": 0,
+                "fetchq_cnt": 0,
+                "fetchq_size": 0,
+                "fetch_state": "none",
+                "query_offset": -1001,
+                "next_offset": 0,
+                "app_offset": -1001,
+                "stored_offset": -1001,
+                "commited_offset": -1001,
+                "committed_offset": -1001,
+                "eof_offset": -1001,
+                "lo_offset": -1001,
+                "hi_offset": -1001,
+                "ls_offset": -1001,
+                "consumer_lag": -1,
+                "consumer_lag_stored": 0,
+                "txmsgs": 3950656,
+                "txbytes": 122470336,
+                "rxmsgs": 0,
+                "rxbytes": 0,
+                "msgs": 3952618,
+                "rx_ver_drops": 0,
+                "msgs_inflight": 0,
+                "next_ack_seq": 0,
+                "next_err_seq": 0,
+                "acked_msgid": 0
+              },
+              "2": {
+                "partition": 2,
+                "broker": 0,
+                "leader": 0,
+                "desired": false,
+                "unknown": false,
+                "msgq_cnt": 1816,
+                "msgq_bytes": 56296,
+                "xmit_msgq_cnt": 0,
+                "xmit_msgq_bytes": 0,
+                "fetchq_cnt": 0,
+                "fetchq_size": 0,
+                "fetch_state": "none",
+                "query_offset": -1001,
+                "next_offset": 0,
+                "app_offset": -1001,
+                "stored_offset": -1001,
+                "commited_offset": -1001,
+                "committed_offset": -1001,
+                "eof_offset": -1001,
+                "lo_offset": -1001,
+                "hi_offset": -1001,
+                "ls_offset": -1001,
+                "consumer_lag": -1,
+                "consumer_lag_stored": 0,
+                "txmsgs": 3952027,
+                "txbytes": 122512837,
+                "rxmsgs": 0,
+                "rxbytes": 0,
+                "msgs": 3953855,
+                "rx_ver_drops": 0,
+                "msgs_inflight": 0,
+                "next_ack_seq": 0,
+                "next_err_seq": 0,
+                "acked_msgid": 0
+              },
+              "-1": {
+                "partition": -1,
+                "broker": -1,
+                "leader": -1,
+                "desired": false,
+                "unknown": false,
+                "msgq_cnt": 0,
+                "msgq_bytes": 0,
+                "xmit_msgq_cnt": 0,
+                "xmit_msgq_bytes": 0,
+                "fetchq_cnt": 0,
+                "fetchq_size": 0,
+                "fetch_state": "none",
+                "query_offset": -1001,
+                "next_offset": 0,
+                "app_offset": -1001,
+                "stored_offset": -1001,
+                "commited_offset": -1001,
+                "committed_offset": -1001,
+                "eof_offset": -1001,
+                "lo_offset": -1001,
+                "hi_offset": -1001,
+                "ls_offset": -1001,
+                "consumer_lag": -1,
+                "consumer_lag_stored": 0,
+                "txmsgs": 0,
+                "txbytes": 0,
+                "rxmsgs": 0,
+                "rxbytes": 0,
+                "msgs": 500000,
+                "rx_ver_drops": 0,
+                "msgs_inflight": 0,
+                "next_ack_seq": 0,
+                "next_err_seq": 0,
+                "acked_msgid": 0
+              }
+            }
+          }
+        },
+        "tx": 31311,
+        "tx_bytes": 463869957,
+        "rx": 31310,
+        "rx_bytes": 1753668,
+        "txmsgs": 11853650,
+        "txmsg_bytes": 367463150,
+        "rxmsgs": 0,
+        "rxmsg_bytes": 0
+      }"#;
 
-    fn make_window(base: i64) -> rdsys::rd_kafka_avg_stats_t {
-        rdsys::rd_kafka_avg_stats_t {
-            min: base,
-            max: base + 1,
-            avg: base + 2,
-            sum: base + 3,
-            cnt: base + 4,
-            stddev: base + 5,
-            p50: base + 6,
-            p75: base + 7,
-            p90: base + 8,
-            p95: base + 9,
-            p99: base + 10,
-            p99_99: base + 11,
-            oor: base + 12,
-            hdrsize: (base + 13) as i32,
-            _pad: 0,
-        }
-    }
-
-    fn assert_window_matches_raw(view: WindowView<'_>, expected: &rdsys::rd_kafka_avg_stats_t) {
-        assert_eq!(view.min(), expected.min);
-        assert_eq!(view.max(), expected.max);
-        assert_eq!(view.avg(), expected.avg);
-        assert_eq!(view.sum(), expected.sum);
-        assert_eq!(view.cnt(), expected.cnt);
-        assert_eq!(view.stddev(), expected.stddev);
-        assert_eq!(view.hdrsize(), expected.hdrsize as i64);
-        assert_eq!(view.p50(), expected.p50);
-        assert_eq!(view.p75(), expected.p75);
-        assert_eq!(view.p90(), expected.p90);
-        assert_eq!(view.p95(), expected.p95);
-        assert_eq!(view.p99(), expected.p99);
-        assert_eq!(view.p99_99(), expected.p99_99);
-        assert_eq!(view.outofrange(), expected.oor);
-    }
-
-    #[test]
-    fn test_stats_view_handles_empty_native_stats() {
-        let mut stats = unsafe { std::mem::zeroed::<rdsys::rd_kafka_stats_t>() };
-        stats.type_ = 99;
-
-        let view = unsafe { StatsView::new(&stats) };
-
-        assert_eq!(view.name(), "");
-        assert_eq!(view.client_id(), "");
-        assert_eq!(view.client_type(), ClientType::Unknown(99));
-        assert_eq!(view.msg_cnt(), 0);
-        assert_eq!(view.msg_size(), 0);
-        assert_eq!(view.msg_max(), 0);
-        assert_eq!(view.msg_size_max(), 0);
-        assert_eq!(view.txmsgs(), 0);
-
-        let mut brokers = view.brokers();
-        assert_eq!(brokers.len(), 0);
-        assert!(brokers.next().is_none());
-
-        let mut topics = view.topics();
-        assert_eq!(topics.len(), 0);
-        assert!(topics.next().is_none());
-
-        assert!(view.cgrp().is_none());
-        assert!(view.eos().is_none());
-    }
-
-    #[test]
-    fn test_stats_view_exposes_typed_fields() {
-        let fixture = RawStatsFixture::populated();
-        assert_eq!(fixture.backing_len(), 5);
-
-        let view = unsafe { StatsView::new(&fixture.stats) };
-
-        assert_eq!(view.name(), "handle-1");
-        assert_eq!(view.client_id(), "client-1");
-        assert_eq!(view.client_type(), ClientType::Producer);
-        assert_eq!(view.msg_cnt(), 21);
-        assert_eq!(view.msg_size(), 22);
-        assert_eq!(view.msg_max(), 23);
-        assert_eq!(view.msg_size_max(), 24);
-        assert_eq!(view.txmsgs(), 25);
-
-        let broker = &fixture.brokers[0];
-        let mut brokers = view.brokers();
-        assert_eq!(brokers.len(), 1);
-        let broker_view = brokers.next().unwrap();
-        assert_eq!(broker_view.name(), "broker-1");
-        assert_eq!(broker_view.nodeid(), broker.nodeid);
-        assert_eq!(broker_view.nodename(), "localhost:9092");
-        assert_eq!(broker_view.source(), "configured");
-        assert_eq!(broker_view.state(), BrokerState::Up);
-        assert_eq!(broker_view.stateage(), broker.stateage_us);
-        assert_eq!(broker_view.waitresp_cnt(), broker.waitresp_cnt as i64);
-        assert_eq!(broker_view.req_timeouts(), broker.req_timeouts as u64);
-        assert_eq!(broker_view.txretries(), broker.tx_retries as u64);
-        assert_eq!(broker_view.txerrs(), broker.tx_errs as u64);
-        assert_eq!(broker_view.connects(), Some(broker.connects));
-        assert_eq!(broker_view.disconnects(), Some(broker.disconnects));
-        assert_eq!(broker_view.rx(), broker.rx as u64);
-        assert_eq!(broker_view.tx(), broker.tx as u64);
-        assert_eq!(broker_view.txidle(), broker.tx_idle_us);
-        assert_eq!(broker_view.rxidle(), broker.rx_idle_us);
-        assert_eq!(broker_view.wakeups(), Some(broker.wakeups as u64));
-        assert_eq!(broker_view.outbuf_cnt(), broker.outbuf_cnt as i64);
-        assert_window_matches_raw(broker_view.int_latency().unwrap(), &broker.int_latency);
-        assert_window_matches_raw(
-            broker_view.outbuf_latency().unwrap(),
-            &broker.outbuf_latency,
-        );
-        assert_window_matches_raw(broker_view.rtt().unwrap(), &broker.rtt);
-        assert_window_matches_raw(
-            broker_view.produce_reqsize().unwrap(),
-            &broker.produce_reqsize,
-        );
-        assert_window_matches_raw(
-            broker_view.produce_partitions().unwrap(),
-            &broker.produce_partitions,
-        );
-        assert_window_matches_raw(
-            broker_view.produce_messages().unwrap(),
-            &broker.produce_messages,
-        );
-        assert_window_matches_raw(broker_view.produce_fill().unwrap(), &broker.produce_fill);
-        assert_window_matches_raw(broker_view.batch_wait().unwrap(), &broker.batch_wait);
-
-        let request_counts: HashMap<_, _> = broker_view
-            .requests()
-            .map(|request| (request.name().into_owned(), request.count()))
-            .collect();
-        assert_eq!(request_counts.len(), 1);
-        assert_eq!(request_counts.get("Produce"), Some(&12));
-        assert!(!request_counts.contains_key("Metadata"));
-
-        let topic = &fixture.topics[0];
-        let mut topics = view.topics();
-        assert_eq!(topics.len(), 1);
-        let topic_view = topics.next().unwrap();
-        assert_eq!(topic_view.name(), "topic-1");
-        assert_eq!(topic_view.metadata_age(), topic.metadata_age_us / 1000);
-        assert_window_matches_raw(topic_view.batchsize(), &topic.batchsize);
-        assert_window_matches_raw(topic_view.batchcnt(), &topic.batchcnt);
-
-        let partition = &fixture.partitions[0];
-        let mut partitions = topic_view.partitions();
-        assert_eq!(partitions.len(), 1);
-        let partition_view = partitions.next().unwrap();
-        assert_eq!(partition_view.partition(), partition.partition);
-        assert_eq!(partition_view.broker(), partition.broker_id);
-        assert_eq!(partition_view.leader(), partition.leader);
-        assert_eq!(partition_view.msgq_cnt(), partition.msgq_cnt as i64);
-        assert_eq!(partition_view.msgq_bytes(), partition.msgq_bytes as u64);
-        assert_eq!(
-            partition_view.xmit_msgq_cnt(),
-            partition.xmit_msgq_cnt as i64
-        );
-        assert_eq!(
-            partition_view.xmit_msgq_bytes(),
-            partition.xmit_msgq_bytes as u64
-        );
-        assert_eq!(partition_view.fetchq_cnt(), partition.fetchq_cnt as i64);
-        assert_eq!(partition_view.fetchq_size(), partition.fetchq_size as u64);
-        assert_eq!(partition_view.fetch_state(), FetchState::ValidateEpochWait);
-        assert_eq!(partition_view.app_offset(), partition.app_offset);
-        assert_eq!(partition_view.stored_offset(), partition.stored_offset);
-        assert_eq!(
-            partition_view.committed_offset(),
-            partition.committed_offset
-        );
-        assert_eq!(partition_view.lo_offset(), partition.lo_offset);
-        assert_eq!(partition_view.hi_offset(), partition.hi_offset);
-        assert_eq!(partition_view.ls_offset(), partition.ls_offset);
-        assert_eq!(partition_view.consumer_lag(), partition.consumer_lag);
-        assert_eq!(
-            partition_view.consumer_lag_stored(),
-            partition.consumer_lag_stored
-        );
-        assert_eq!(partition_view.txmsgs(), partition.txmsgs as u64);
-        assert_eq!(partition_view.txbytes(), partition.txbytes as u64);
-        assert_eq!(partition_view.rxmsgs(), partition.rxmsgs as u64);
-        assert_eq!(partition_view.rxbytes(), partition.rxbytes as u64);
-        assert_eq!(partition_view.msgs(), partition.msgs as u64);
-
-        let cgrp_view = view.cgrp().unwrap();
-        assert_eq!(cgrp_view.state(), ConsumerGroupState::Up);
-        assert_eq!(cgrp_view.stateage(), 31);
-        assert_eq!(cgrp_view.join_state(), ConsumerGroupJoinState::Steady);
-        assert_eq!(cgrp_view.rebalance_age(), 32);
-        assert_eq!(cgrp_view.rebalance_cnt(), 33);
-        assert_eq!(cgrp_view.rebalance_reason(), "assign");
-        assert_eq!(cgrp_view.assignment_size(), 34);
-
-        let eos_view = view.eos().unwrap();
-        assert_eq!(eos_view.idemp_state(), IdempotentState::Assigned);
-        assert_eq!(eos_view.idemp_stateage(), 41);
-        assert_eq!(
-            eos_view.txn_state(),
-            TransactionState::CommittingTransaction
-        );
-        assert_eq!(eos_view.txn_stateage(), 42);
-        assert!(eos_view.txn_may_enq());
-        assert_eq!(eos_view.producer_id(), 43);
-        assert_eq!(eos_view.producer_epoch(), 44);
-        assert_eq!(eos_view.epoch_cnt(), 45);
-    }
-
-    #[test]
-    fn test_stats_view_unknown_enum_values() {
-        assert_eq!(FetchState::from_raw(5), FetchState::ValidateEpochWait);
-        assert_eq!(FetchState::from_raw(5).as_str(), "validate-epoch-wait");
-        assert_eq!(FetchState::from_raw(6), FetchState::Active);
-        assert_eq!(FetchState::from_raw(6).as_str(), "active");
-
-        assert_eq!(BrokerState::from_raw(-1), BrokerState::Unknown(-1));
-        assert_eq!(BrokerState::from_raw(-1).as_str(), "UNKNOWN");
-
-        assert_eq!(ClientType::from_raw(99), ClientType::Unknown(99));
-        assert_eq!(ClientType::from_raw(99).as_str(), "unknown");
-
-        assert_eq!(FetchState::from_raw(-1), FetchState::Unknown(-1));
-        assert_eq!(FetchState::from_raw(-1).as_str(), "unknown");
-
-        assert_eq!(
-            ConsumerGroupState::from_raw(99),
-            ConsumerGroupState::Unknown(99)
-        );
-        assert_eq!(ConsumerGroupState::from_raw(99).as_str(), "unknown");
-
-        assert_eq!(
-            ConsumerGroupJoinState::from_raw(99),
-            ConsumerGroupJoinState::Unknown(99)
-        );
-        assert_eq!(ConsumerGroupJoinState::from_raw(99).as_str(), "unknown");
-
-        assert_eq!(IdempotentState::from_raw(99), IdempotentState::Unknown(99));
-        assert_eq!(IdempotentState::from_raw(99).as_str(), "Unknown");
-
-        assert_eq!(
-            TransactionState::from_raw(99),
-            TransactionState::Unknown(99)
-        );
-        assert_eq!(TransactionState::from_raw(99).as_str(), "Unknown");
-    }
 }
