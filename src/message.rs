@@ -404,6 +404,11 @@ impl<'a> BorrowedMessage<'a> {
         self.ptr.len
     }
 
+    /// Returns the epoch number of the message -1 if unavailable.
+    pub fn leader_epoch(&self) -> i32 {
+        unsafe { rdsys::rd_kafka_message_leader_epoch(self.ptr.ptr()) }
+    }
+
     /// Clones the content of the `BorrowedMessage` and returns an
     /// [`OwnedMessage`] that can outlive the consumer.
     ///
