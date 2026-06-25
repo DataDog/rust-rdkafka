@@ -160,9 +160,14 @@ impl<'a> TopicPartitionListElem<'a> {
         unsafe { rdsys::rd_kafka_topic_partition_get_leader_epoch(self.ptr) }
     }
 
-    /// Sets the leader epoch for this entry. Pass -1 if unknown.
-    pub fn set_leader_epoch(&mut self, leader_epoch: i32) {
-        unsafe { rdsys::rd_kafka_topic_partition_set_leader_epoch(self.ptr, leader_epoch) }
+    /// Sets the leader epoch for this entry. Pass `None` if unknown.
+    pub fn set_leader_epoch(&mut self, leader_epoch: Option<i32>) {
+        unsafe {
+            rdsys::rd_kafka_topic_partition_set_leader_epoch(
+                self.ptr,
+                leader_epoch.unwrap_or(-1),
+            )
+        }
     }
 }
 
