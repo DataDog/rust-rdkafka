@@ -1,5 +1,6 @@
 //! Store and manipulate Kafka messages.
 
+use crate::topic_partition_list::LEADER_EPOCH_UNAVAILABLE;
 use std::ffi::CStr;
 use std::fmt;
 use std::marker::PhantomData;
@@ -407,7 +408,7 @@ impl<'a> BorrowedMessage<'a> {
     /// Returns the leader epoch of the message, or `None` if unavailable.
     pub fn leader_epoch(&self) -> Option<i32> {
         let epoch = unsafe { rdsys::rd_kafka_message_leader_epoch(self.ptr.ptr()) };
-        Some(epoch).filter(|&e| e >= 0)
+        Some(epoch).filter(|&e| e != LEADER_EPOCH_UNAVAILABLE)
     }
 
     /// Clones the content of the `BorrowedMessage` and returns an
