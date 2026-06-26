@@ -16,6 +16,7 @@ use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::util::{self, KafkaDrop, NativePtr};
 
 const PARTITION_UNASSIGNED: i32 = -1;
+pub(crate) const LEADER_EPOCH_UNAVAILABLE: i32 = -1;
 
 const OFFSET_BEGINNING: i64 = rdsys::RD_KAFKA_OFFSET_BEGINNING as i64;
 const OFFSET_END: i64 = rdsys::RD_KAFKA_OFFSET_END as i64;
@@ -155,9 +156,20 @@ impl<'a> TopicPartitionListElem<'a> {
         self.ptr.metadata_size = metadata.len();
     }
 
-    /// Returns leader epoch associated with the entry.
-    pub fn leader_epoch(&self) -> i32 {
-        unsafe { rdsys::rd_kafka_topic_partition_get_leader_epoch(self.ptr) }
+    /// Returns leader epoch associated with the entry, or `None` if unavailable.
+    pub fn leader_epoch(&self) -> Option<i32> {
+        let epoch = unsafe { rdsys::rd_kafka_topic_partition_get_leader_epoch(self.ptr) };
+        Some(epoch).filter(|&e| e != LEADER_EPOCH_UNAVAILABLE)
+    }
+
+    /// Sets the leader epoch for this entry. Pass `None` if unknown.
+    pub fn set_leader_epoch(&mut self, leader_epoch: Option<i32>) {
+        unsafe {
+            rdsys::rd_kafka_topic_partition_set_leader_epoch(
+                self.ptr,
+                leader_epoch.unwrap_or(LEADER_EPOCH_UNAVAILABLE),
+            )
+        }
     }
 }
 
