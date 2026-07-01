@@ -226,6 +226,16 @@ pub trait Message {
 
     /// Returns the headers of the message, or `None` if there are no headers.
     fn headers(&self) -> Option<&Self::Headers>;
+
+    /// Returns the leader epoch of the message, or `None` if unavailable.
+    ///
+    /// The default implementation returns `None`. If your message type carries
+    /// a leader epoch (e.g. it wraps a live rdkafka message), you should
+    /// override this method so callers receive the real value instead of always
+    /// getting `None`.
+    fn leader_epoch(&self) -> Option<i32> {
+        None
+    }
 }
 
 /// A zero-copy collection of Kafka message headers.
@@ -405,12 +415,6 @@ impl<'a> BorrowedMessage<'a> {
         self.ptr.len
     }
 
-    /// Returns the leader epoch of the message, or `None` if unavailable.
-    pub fn leader_epoch(&self) -> Option<i32> {
-        let epoch = unsafe { rdsys::rd_kafka_message_leader_epoch(self.ptr.ptr()) };
-        Some(epoch).filter(|&e| e != LEADER_EPOCH_UNAVAILABLE)
-    }
-
     /// Clones the content of the `BorrowedMessage` and returns an
     /// [`OwnedMessage`] that can outlive the consumer.
     ///
@@ -492,6 +496,11 @@ impl<'a> Message for BorrowedMessage<'a> {
                 _ => None,
             }
         }
+    }
+
+    fn leader_epoch(&self) -> Option<i32> {
+        let epoch = unsafe { rdsys::rd_kafka_message_leader_epoch(self.ptr.ptr()) };
+        Some(epoch).filter(|&e| e != LEADER_EPOCH_UNAVAILABLE)
     }
 }
 
@@ -735,6 +744,11 @@ impl Message for OwnedMessage {
 
     fn headers(&self) -> Option<&OwnedHeaders> {
         self.headers.as_ref()
+    }
+
+    fn leader_epoch(&self) -> Option<i32> {
+        // OwnedMessage is a detached copy; the leader epoch is not preserved during detach.
+        None
     }
 }
 
