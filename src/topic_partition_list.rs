@@ -16,7 +16,7 @@ use crate::error::{IsError, KafkaError, KafkaResult};
 use crate::util::{self, KafkaDrop, NativePtr};
 
 const PARTITION_UNASSIGNED: i32 = -1;
-pub(crate) const LEADER_EPOCH_UNAVAILABLE: i32 = -1;
+pub const LEADER_EPOCH_UNAVAILABLE: i32 = -1;
 
 const OFFSET_BEGINNING: i64 = rdsys::RD_KAFKA_OFFSET_BEGINNING as i64;
 const OFFSET_END: i64 = rdsys::RD_KAFKA_OFFSET_END as i64;
