@@ -3,7 +3,7 @@
 use libc::{c_char, c_int, c_void, sockaddr, FILE};
 use num_enum::TryFromPrimitive;
 
-pub const RD_KAFKA_VERSION: i32 = 34210815;
+pub const RD_KAFKA_VERSION: i32 = 34211071;
 pub const RD_KAFKA_DEBUG_CONTEXTS : & [u8 ; 138] = b"all,generic,broker,topic,metadata,feature,queue,msg,protocol,cgrp,security,fetch,interceptor,plugin,consumer,admin,eos,mock,assignor,conf\0" ;
 pub const RD_KAFKA_STATS_NAME_MAX: i32 = 256;
 pub const RD_KAFKA_STATS_REQ_TYPES_MAX: i32 = 64;
