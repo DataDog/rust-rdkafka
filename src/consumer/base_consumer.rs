@@ -29,7 +29,30 @@ use crate::util::{cstr_to_owned, NativePtr, Timeout};
 /// A low-level consumer that requires manual polling.
 ///
 /// This consumer must be periodically polled to make progress on rebalancing,
-/// callbacks and to receive messages.
+/// callbacks and to receive messages. Custom OAuth refresh callbacks run on a
+/// native background thread, so constructing a consumer requires a `'static`
+/// context even if the consumer is later leaked with [`std::mem::forget`].
+///
+/// ```compile_fail,E0597
+/// use rdkafka::client::ClientContext;
+/// use rdkafka::config::ClientConfig;
+/// use rdkafka::consumer::{BaseConsumer, ConsumerContext};
+///
+/// struct BorrowedContext<'a>(&'a str);
+/// impl ClientContext for BorrowedContext<'_> {
+///     const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
+/// }
+/// impl ConsumerContext for BorrowedContext<'_> {}
+///
+/// let borrowed = String::from("temporary context data");
+/// let consumer: BaseConsumer<BorrowedContext<'_>> = ClientConfig::new()
+///     .set("security.protocol", "SASL_PLAINTEXT")
+///     .set("sasl.mechanisms", "OAUTHBEARER")
+///     .create_with_context(BorrowedContext(&borrowed))
+///     .unwrap();
+/// std::mem::forget(consumer);
+/// drop(borrowed);
+/// ```
 pub struct BaseConsumer<C = DefaultConsumerContext>
 where
     C: ConsumerContext,
@@ -47,7 +70,7 @@ impl FromClientConfig for BaseConsumer {
 }
 
 /// Creates a new `BaseConsumer` starting from a `ClientConfig`.
-impl<C: ConsumerContext> FromClientConfigAndContext<C> for BaseConsumer<C> {
+impl<C: ConsumerContext + 'static> FromClientConfigAndContext<C> for BaseConsumer<C> {
     fn from_config_and_context(config: &ClientConfig, context: C) -> KafkaResult<BaseConsumer<C>> {
         BaseConsumer::new(config, config.create_native_config()?, context)
     }
@@ -61,7 +84,10 @@ where
         config: &ClientConfig,
         native_config: NativeClientConfig,
         context: C,
-    ) -> KafkaResult<BaseConsumer<C>> {
+    ) -> KafkaResult<BaseConsumer<C>>
+    where
+        C: 'static,
+    {
         unsafe {
             rdsys::rd_kafka_conf_set_events(
                 native_config.ptr(),
@@ -72,12 +98,7 @@ where
                     | rdsys::RD_KAFKA_EVENT_OAUTHBEARER_TOKEN_REFRESH,
             )
         };
-        let client = Client::new(
-            config,
-            native_config,
-            RDKafkaType::RD_KAFKA_CONSUMER,
-            context,
-        )?;
+        let client = Client::new_consumer(config, native_config, context)?;
 
         let group_id = config.get("group.id").map(|s| s.to_string());
         // If a group.id is not specified, we won't redirect the main queue to the consumer queue,
