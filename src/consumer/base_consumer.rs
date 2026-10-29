@@ -29,9 +29,13 @@ use crate::util::{cstr_to_owned, NativePtr, Timeout};
 /// A low-level consumer that requires manual polling.
 ///
 /// This consumer must be periodically polled to make progress on rebalancing,
-/// callbacks and to receive messages. Custom OAuth refresh callbacks run on a
-/// native background thread, so constructing a consumer requires a `'static`
-/// context even if the consumer is later leaked with [`std::mem::forget`].
+/// callbacks and to receive messages. When
+/// [`ClientContext::ENABLE_REFRESH_OAUTH_TOKEN`](crate::client::ClientContext::ENABLE_REFRESH_OAUTH_TOKEN)
+/// is enabled and librdkafka's
+/// built-in OIDC or unsecure JWT token source is not configured, custom OAuth
+/// refresh callbacks run on a native background thread. Constructing a consumer
+/// requires a `'static` context even if the consumer is later leaked with
+/// [`std::mem::forget`].
 ///
 /// ```compile_fail,E0597
 /// use rdkafka::client::ClientContext;

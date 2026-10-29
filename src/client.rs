@@ -56,9 +56,11 @@ pub trait ClientContext: Send + Sync {
     /// instead.
     ///
     /// This parameter is only relevant when using the `OAUTHBEARER` SASL
-    /// mechanism. BaseConsumer and StreamConsumer service this callback on librdkafka's background
-    /// SASL queue, independently of application polling. The callback must not
-    /// destroy the client and should bound any blocking work.
+    /// mechanism. When enabled, BaseConsumer and StreamConsumer service this
+    /// callback on librdkafka's background SASL queue, independently of application
+    /// polling, unless librdkafka's built-in OIDC or unsecure JWT token source is
+    /// configured. The callback must not destroy the client and should bound any
+    /// blocking work.
     const ENABLE_REFRESH_OAUTH_TOKEN: bool = false;
 
     /// Receives log lines from librdkafka.
@@ -226,19 +228,42 @@ unsafe extern "C" fn background_oauth_refresh<C: ClientContext + 'static>(
 ) {
     // Never unwind through C. Report callback panics as refresh failures so
     // librdkafka can schedule a retry using its normal OAuth refresh policy.
-    if catch_unwind(AssertUnwindSafe(|| {
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(|| {
         let context = unsafe { &*(opaque as *const C) };
         Client::<C>::refresh_oauth_token(native, context, config);
-    }))
-    .is_err()
-    {
+    })) {
+        let message = oauth_refresh_panic_message(payload.as_ref());
+        // librdkafka copies the full string, but its emitted error event uses a
+        // 2048-byte buffer (including its prefix and trailing NUL).
         unsafe {
-            rdsys::rd_kafka_oauthbearer_set_token_failure(
-                native,
-                b"OAuth refresh callback panicked\0".as_ptr().cast(),
-            );
+            rdsys::rd_kafka_oauthbearer_set_token_failure(native, message.as_ptr());
         }
     }
+}
+
+fn oauth_refresh_panic_message(payload: &(dyn std::any::Any + Send)) -> CString {
+    let reason = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload");
+    // Panic messages can contain NULs, unlike C strings. Preserve them visibly
+    // without panicking again while handling an unwind at the FFI boundary.
+    CString::new(format!("OAuth refresh callback panicked: {}", reason).replace('\0', "\\0"))
+        .expect("embedded NULs have been escaped")
+}
+
+fn uses_context_oauth_refresh(config: &NativeClientConfig) -> KafkaResult<bool> {
+    let protocol = config.get("security.protocol")?;
+    // OIDC and unsecure JWT supply their own tokens. A context refresh callback
+    // would override built-in OIDC and is mutually exclusive with unsecure JWT.
+    Ok((protocol.eq_ignore_ascii_case("sasl_ssl")
+        || protocol.eq_ignore_ascii_case("sasl_plaintext"))
+        && config
+            .get("sasl.mechanisms")?
+            .eq_ignore_ascii_case("OAUTHBEARER")
+        && config.get("sasl.oauthbearer.method")? != "oidc"
+        && config.get("enable.sasl.oauthbearer.unsecure.jwt")? != "true")
 }
 
 /// A low-level rdkafka client.
@@ -323,13 +348,8 @@ impl<C: ClientContext> Client<C> {
     where
         C: 'static,
     {
-        let protocol = native_config.get("security.protocol")?;
-        let background_oauth = C::ENABLE_REFRESH_OAUTH_TOKEN
-            && (protocol.eq_ignore_ascii_case("sasl_ssl")
-                || protocol.eq_ignore_ascii_case("sasl_plaintext"))
-            && native_config
-                .get("sasl.mechanisms")?
-                .eq_ignore_ascii_case("OAUTHBEARER");
+        let background_oauth =
+            C::ENABLE_REFRESH_OAUTH_TOKEN && uses_context_oauth_refresh(&native_config)?;
         if background_oauth {
             // Route only SASL refresh work off the application queue. Messages,
             // rebalances, commits and other callbacks retain their normal path.
@@ -746,6 +766,7 @@ mod tests {
 
     struct BackgroundOAuthContext {
         calls: Sender<thread::ThreadId>,
+        errors: Option<Sender<String>>,
         attempts: AtomicUsize,
         first_failure: &'static str,
         dropped: Arc<AtomicBool>,
@@ -753,6 +774,12 @@ mod tests {
 
     impl ClientContext for BackgroundOAuthContext {
         const ENABLE_REFRESH_OAUTH_TOKEN: bool = true;
+
+        fn error(&self, _: KafkaError, reason: &str) {
+            if let Some(errors) = &self.errors {
+                let _ = errors.send(reason.to_owned());
+            }
+        }
 
         fn generate_oauth_token(&self, _: Option<&str>) -> Result<OAuthToken, Box<dyn Error>> {
             self.calls.send(thread::current().id()).unwrap();
@@ -784,6 +811,115 @@ mod tests {
     }
 
     #[test]
+    fn oauth_panic_messages_preserve_payloads() {
+        for (payload, expected) in [
+            (
+                Box::new("static panic") as Box<dyn std::any::Any + Send>,
+                "static panic",
+            ),
+            (Box::new(String::from("owned panic")), "owned panic"),
+            (Box::new("before\0after"), "before\\0after"),
+            (Box::new(42), "non-string panic payload"),
+        ] {
+            assert_eq!(
+                oauth_refresh_panic_message(payload.as_ref())
+                    .to_str()
+                    .unwrap(),
+                format!("OAuth refresh callback panicked: {}", expected)
+            );
+        }
+        // The token-failure API accepts the full message even though native
+        // error events truncate it later.
+        let long_message = "x".repeat(4096);
+        assert_eq!(
+            oauth_refresh_panic_message(&long_message).to_str().unwrap(),
+            format!("OAuth refresh callback panicked: {}", long_message)
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "ssl")]
+    fn background_oauth_reports_panic_message() {
+        let (sender, _receiver) = mpsc::channel();
+        let (errors, received_errors) = mpsc::channel();
+        let consumer: BaseConsumer<BackgroundOAuthContext> = ClientConfig::new()
+            .set("security.protocol", "SASL_PLAINTEXT")
+            .set("sasl.mechanisms", "OAUTHBEARER")
+            .create_with_context(BackgroundOAuthContext {
+                calls: sender,
+                errors: Some(errors),
+                attempts: AtomicUsize::new(0),
+                first_failure: "panic",
+                dropped: Arc::new(AtomicBool::new(false)),
+            })
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let _ = consumer.poll(Duration::from_millis(100));
+            if let Some(reason) = received_errors
+                .try_iter()
+                .find(|reason| reason.contains("OAuth refresh callback panicked"))
+            {
+                assert!(reason.ends_with("OAuth refresh callback panicked: test callback panic"));
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "panic error was not delivered"
+            );
+        }
+    }
+
+    #[cfg(feature = "ssl")]
+    fn assert_builtin_oauth_source(config: &ClientConfig) {
+        let (sender, receiver) = mpsc::channel();
+        let consumer: BaseConsumer<BackgroundOAuthContext> = config
+            .create_with_context(BackgroundOAuthContext {
+                calls: sender,
+                errors: None,
+                attempts: AtomicUsize::new(0),
+                first_failure: "none",
+                dropped: Arc::new(AtomicBool::new(false)),
+            })
+            .unwrap();
+        // Construction and the initial poll must leave the explicitly configured
+        // native token source in control.
+        assert!(receiver.recv_timeout(Duration::from_millis(100)).is_err());
+        let _ = consumer.poll(Duration::from_millis(100));
+        assert!(receiver.try_recv().is_err());
+        drop(consumer);
+    }
+
+    #[test]
+    #[cfg(feature = "ssl")]
+    fn background_oauth_preserves_unsecure_jwt() {
+        assert_builtin_oauth_source(
+            ClientConfig::new()
+                .set("security.protocol", "SASL_PLAINTEXT")
+                .set("sasl.mechanisms", "OAUTHBEARER")
+                .set("enable.sasl.oauthbearer.unsecure.jwt", "true")
+                .set("sasl.oauthbearer.config", "principal=test-principal"),
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "ssl", feature = "curl"))]
+    fn background_oauth_preserves_oidc() {
+        assert_builtin_oauth_source(
+            ClientConfig::new()
+                .set("security.protocol", "SASL_PLAINTEXT")
+                .set("sasl.mechanisms", "OAUTHBEARER")
+                .set("sasl.oauthbearer.method", "oidc")
+                .set("sasl.oauthbearer.client.id", "test-client")
+                .set("sasl.oauthbearer.client.secret", "test-secret")
+                .set(
+                    "sasl.oauthbearer.token.endpoint.url",
+                    "http://127.0.0.1:1/token",
+                ),
+        );
+    }
+
+    #[test]
     #[cfg(feature = "ssl")]
     fn background_oauth_refreshes_and_retries_without_polling() {
         for first_failure in ["none", "error", "panic"] {
@@ -794,6 +930,7 @@ mod tests {
                 .set("sasl.mechanisms", "OAUTHBEARER")
                 .create_with_context(BackgroundOAuthContext {
                     calls: sender,
+                    errors: None,
                     attempts: AtomicUsize::new(0),
                     first_failure,
                     dropped: Arc::clone(&dropped),
@@ -822,6 +959,7 @@ mod tests {
         let consumer: BaseConsumer<BackgroundOAuthContext> = ClientConfig::new()
             .create_with_context(BackgroundOAuthContext {
                 calls: sender,
+                errors: None,
                 attempts: AtomicUsize::new(0),
                 first_failure: "none",
                 dropped: Arc::new(AtomicBool::new(false)),
